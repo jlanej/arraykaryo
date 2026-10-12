@@ -65,6 +65,7 @@ def main():
     ap.add_argument("--replicates", type=int, default=2)
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--keep", action="store_true", help="keep the work directory")
+    ap.add_argument("--figure-only", action="store_true", help="redraw calibration.png and calibration.md from an existing calibration.tsv under --out")
     a = ap.parse_args()
     from arraykaryo.genome import load_genome
     G = load_genome("chm13")
@@ -72,7 +73,12 @@ def main():
     rows, fps = [], []
     t0 = time.time()
     exe = os.path.join(os.path.dirname(sys.executable), "arraykaryo")
-    for rep in range(a.replicates):
+    if a.figure_only:
+        for r in read_tsv(os.path.join(a.out, "calibration.tsv")):
+            rows.append(dict(r, f=float(r["f"]), detected=int(r["detected"]), type_ok=int(r["type_ok"]), class_ok=int(r["class_ok"]), f_err=float(r["f_err"]) if r["f_err"] != "NA" else np.nan, replicate=int(r["replicate"])))
+        fps = [dict(r, replicate=int(r["replicate"])) for r in read_tsv(os.path.join(a.out, "false_positives.tsv"))]
+        a.replicates = max(r["replicate"] for r in rows) + 1
+    for rep in range(0 if a.figure_only else a.replicates):
         wd = os.path.join(a.work, "rep%d" % rep)
         md, od = os.path.join(wd, "mock"), os.path.join(wd, "out")
         shutil.rmtree(wd, ignore_errors=True)
@@ -116,8 +122,9 @@ def main():
             shutil.rmtree(wd, ignore_errors=True)
     os.makedirs(a.out, exist_ok=True)
     cols = ["replicate", "kind", "f", "size", "chrom", "n_probes", "detected", "type_called", "span_called", "f_called", "f_lrr", "f_baf", "type_ok", "class_ok", "f_err", "other_calls"]
-    write_tsv(os.path.join(a.out, "calibration.tsv"), cols, rows, nd=4)
-    write_tsv(os.path.join(a.out, "false_positives.tsv"), ["replicate", "sample", "chrom", "start", "end", "type", "span", "f", "lrr", "d", "note"], fps)
+    if not a.figure_only:
+        write_tsv(os.path.join(a.out, "calibration.tsv"), cols, rows, nd=4)
+        write_tsv(os.path.join(a.out, "false_positives.tsv"), ["replicate", "sample", "chrom", "start", "end", "type", "span", "f", "lrr", "d", "note"], fps)
     # the tables
     md = ["# Calibration: the detection curve on the mock\n",
           "Mock cohorts at a probe spacing of %.1f kb (the example array's), per-sample LRR SD %.2f, BAF SD drawn in 0.03-0.05, %d replicate(s); every (kind, cell fraction, size) planted "
@@ -142,9 +149,10 @@ def main():
                 errs = [r["f_err"] for r in rr if np.isfinite(r["f_err"])]
                 cells.append("%.0f%% (%.0f%%/%.0f%%) err %s" % (100 * det, 100 * tok, 100 * cok, ("%.2f" % np.median(errs)) if errs else "-"))
             md.append("| %.2f | " % f + " | ".join(cells) + " |")
-    n_fp = sum(1 for x in fps if x["chrom"])
+    real_fp = [x for x in fps if x["chrom"] not in ("", "NA")]
+    n_fp = len(real_fp)
     n_null_samples = sum(int(x["sample"].split(": ")[1].rstrip(")")) for x in fps if x["sample"].startswith("(null"))
-    fp_samples = len({(x["replicate"], x["sample"]) for x in fps if x["chrom"]})
+    fp_samples = len({(x["replicate"], x["sample"]) for x in real_fp})
     md.append("\n## False positives\n\n%d events on %d of %d null samples (the brief asks for no event in 19 of 20): see false_positives.tsv.\n" % (n_fp, fp_samples, n_null_samples))
     with open(os.path.join(a.out, "calibration.md"), "w") as fh:
         fh.write("\n".join(md) + "\n")
@@ -152,7 +160,7 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 3, figsize=(11, 3.6))
+    fig, axes = plt.subplots(1, 3, figsize=(12.5, 4.0), gridspec_kw=dict(wspace=0.35))
     for ax, kind in zip(axes, KINDS):
         fr = [f for f in FRACTIONS if not (kind == "loh" and f == 1.0)]
         M = np.full((len(fr), len(SIZES_MB)), np.nan)
@@ -165,13 +173,13 @@ def main():
         ax.set_xticks(range(len(SIZES_MB))), ax.set_xticklabels([str(s) for s in SIZES_MB])
         ax.set_yticks(range(len(fr))), ax.set_yticklabels(["%.2f" % f for f in fr])
         ax.set_xlabel("size (Mb; arm; whole chromosome)"), ax.set_ylabel("cell fraction")
-        ax.set_title("%s: detected with the right type" % kind)
+        ax.set_title({"gain": "gain", "loss": "loss", "loh": "copy-neutral LOH"}[kind] + ": detected with the right type (%)", fontsize=10)
         for i in range(len(fr)):
             for j in range(len(SIZES_MB)):
                 if np.isfinite(M[i, j]):
                     ax.text(j, i, "%.0f" % (100 * M[i, j]), ha="center", va="center", fontsize=7, color="white" if M[i, j] < 0.6 else "black")
     fig.colorbar(im, ax=axes, fraction=0.02, label="detection rate")
-    fig.suptitle("arraykaryo detection on the mock at %.1f-kb probe spacing, LRR SD %.2f (%d replicates; %d false-positive events on %d null samples)" % (a.density_kb, a.lrr_sd, a.replicates, n_fp, n_null_samples), fontsize=9)
+    fig.suptitle("arraykaryo detection on the mock at %.1f-kb probe spacing, LRR SD %.2f (%d replicates; %d false-positive events on %d null samples)" % (a.density_kb, a.lrr_sd, a.replicates, n_fp, n_null_samples), fontsize=10, y=1.02)
     fig.savefig(os.path.join(a.out, "calibration.png"), dpi=150, bbox_inches="tight")
     print("-> %s (%.0f s)" % (a.out, time.time() - t0))
 
