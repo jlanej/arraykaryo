@@ -395,8 +395,10 @@ def fig_genome(out, ctx, name, events, rohs, kar, max_points=40000):
     ax_h.set_xticks([off[c] + G.length[c] / 2e6 for c in chroms])
     ax_h.set_xticklabels([c[3:] for c in chroms], fontsize=6)
     ax_h.set_xlabel("chromosome")
+    import textwrap
     title = "%s: %s%s" % (name, kar.get("karyotype", "") if kar else "", ("; QC flags: " + q["flags"]) if q.get("flags", "NA") != "NA" else "")
-    ax_ev.set_title(title, fontsize=9, loc="left")
+    title = "\n".join(textwrap.wrap(title, 170)[:2]) + (" ..." if len(title) > 340 else "")                  # a long karyotype string must not widen the image
+    ax_ev.set_title(title, fontsize=8, loc="left")
     handles = [plt.Line2D([], [], color=TYPE_COLOUR[t], lw=4, label=TYPE_NAME[t]) for t in ("gain", "loss", "loh", "roh")]
     handles += [plt.Line2D([], [], marker="o", ls="", color=PAL["het"], markersize=3, label="BAF at heterozygous calls"), plt.Line2D([], [], marker="o", ls="", color=PAL["baf"], markersize=3, label="BAF at homozygous calls"),
                 plt.Line2D([], [], color=PAL["het"], lw=1, label="heterozygous rate / expected (per window)"), plt.Line2D([], [], color=PAL["roh"], lw=3, label="run of homozygosity")]

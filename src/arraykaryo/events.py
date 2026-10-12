@@ -465,6 +465,9 @@ def call_one(ctx, i, p, L1, L3):
     d0, d_spread, chrom_med, s_chrom = baseline_split(ctx, i, chroms, baf_sd, sample_sd)
     base = (d0, d_spread, s_chrom)
     xtr = next(((a, b) for name, c, a, b, why in ctx.artefacts if name == "X-transposed region"), None)
+    x_mosaic_kind = ""                                                     # a whole-X mosaic the sex step called: its pieces on the X are not events of their own
+    if sx and "of an X" in sx.get("mosaic", ""):
+        x_mosaic_kind = "gain" if "gain of an X" in sx["mosaic"] else "loss"
     events, rohs = [], []
     roh_bp_total, probed_total = 0, 0
     for chrom in chroms:
@@ -495,6 +498,8 @@ def call_one(ctx, i, p, L1, L3):
                 continue                                          # a whole X gained or lost is the sex step's call
             if is_x and xy and xtr and min(s["end"], xtr[1]) - max(s["start"], xtr[0]) > 0.5 * (s["end"] - s["start"] + 1):
                 continue                                          # the X-transposed region reads as two copies in a man
+            if is_x and x_mosaic_kind and kind == x_mosaic_kind:
+                continue                                          # a piece of the whole-X mosaic the sex step already called
             const = finite(f) and f >= p["const_f"]
             if s["n_het"] < p["n_het_min"] and kind in ("gain", "loss", "loh"):
                 notes.append("thin: %d heterozygous calls" % s["n_het"])

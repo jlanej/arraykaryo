@@ -295,7 +295,7 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
             if dev_y <= -floor_y["M"]:
                 fy = float(min(-dev_y, 1.0))
                 if yc < 0.05:
-                    txt = "no Y: 45,X (in a man, the Y lost in every cell)"
+                    txt = {"M": "no Y: 45,X (the Y lost in every cell of a reported male)", "F": "no Y: 45,X"}.get(reported[i], "no Y: 45,X (a man whose cells lost the Y, or a 45,X woman)")
                 elif fy >= p["const_f"]:
                     txt = "loss of Y in %.0f%% of cells" % (100 * fy)
                 else:
