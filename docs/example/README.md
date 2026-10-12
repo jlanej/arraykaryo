@@ -23,7 +23,8 @@ the pseudoautosomal regions, and the PAR probes of the Y carry diploid calls in 
 ## What was checked (version 0.5.2; the numbers below are from this run)
 
 **Timing** (a laptop, 8 threads): extract 390 s (a 35-GB cache, 1.5 GB resident), qc 373 s, sex about 90 s, pedigree
-134 s, events about 25 minutes with figures for every flagged sample (the window tracks 546 s of it). `benchmarks/`.
+134 s, events 32 minutes without figures (the window tracks 546 s of it, the calls 1,409 s at 6.3 core-seconds per
+sample over 23 chromosomes; 5 GB resident), report with digest-only pages a few minutes. `benchmarks/`.
 
 **Quality** (`qc/`). 1,788 of 2,141 samples pass with no flag; 17 fail hard (LRR SD above 0.30); flagged: 257 for a BAF SD
 above 0.06 (this platform's noisy tail: their LRR SD is 0.18 against 0.14 for the rest, and the BAF SD is continuous from
@@ -65,4 +66,34 @@ cryptic relatedness of the 1000 Genomes collection), one pair listed as third or
 and one sample's sex differs between the IGSR table and the sample sheet (HG02300). No claimed parent is unrelated: the
 collection's pedigree holds.
 
-**Events** (`events/`, `report/`): see below.
+**Events** (`events/`, `report/`). 7,657 events on 1,822 of the 2,124 samples read (median 2 per sample; 179 samples
+with more than 11 are flagged `event_count`), 23,102 runs of homozygosity of 1.5 Mb or more (F_ROH median 0.007; 10 samples
+above 0.0625, the level of a first-cousin union), 356 runs of 10 Mb or more. Of the 5,540 autosomal events 4,543 carry a
+tag: 4,346 recurrent (the same type in 2% or more of the samples over the same 1-Mb bins: the centromere flanks of
+chromosomes 5 and 10 in 14% of samples, 16p11.2 in 13%, the 9p11-q21 heterochromatin block of CHM13 in 48 samples),
+4,469 probe-sparse, 4,142 in a listed artefact region - almost all read from the LRR alone, with no heterozygous calls to
+split; they stay in `events.all.tsv` with their tags and off the digest. The 997 untagged events on 379 samples: 607 with the
+BAF split behind them (242 gains, median 26% of cells; 86 losses, median 17%; 279 copy-neutral LOH, median 12%) and 368
+runs of homozygosity of 10 Mb or more. Four whole chromosomes: a gain of chromosome 9 in 73% of the cells of NA19208 and a
+whole 21 without heterozygosity in NA20509 (an isodisomy or consanguinity: F_ROH says which), plus the sex chromosomes.
+
+The samples triokaryo read from whole-genome sequencing (docs of that project): **HG01103** carries a mosaic loss of 2q
+from q22.1 to q33.1 (141-203 Mb) in 52-55% of cells, called in seven pieces with a lower-fraction piece at q31.1-q31.2
+(35%: the subclonal extension triokaryo saw), and a mosaic loss of 14q13.2-q21.1 (29-35 Mb) in 55% of cells; triokaryo read
+67% and 64% from sequencing of a different DNA preparation. **NA12748** carries a mosaic gain of 13q31.2-q34 (87-113 Mb)
+in 19-20% of cells and a mosaic terminal loss of 21q22.3 (42.8-45.1 Mb) in 20%, where triokaryo read 69% and 59%: the same
+events at the same places, at a third of the fraction - the array's DNA and the sequenced DNA are different preparations
+of a lymphoblastoid line, and a clone's share changes with passage. His two pericentromeric calls (chromosomes 5 and
+10) carry the recurrent and probe-sparse tags. HG01103's parents HG01101 and HG01102 and NA12748's partner NA12749 carry
+none of these events.
+
+Lymphoblastoid culture artefacts are listed as findings with their cell fraction, not treated as errors: the X losses in
+women and the losses of Y in men above, gains of whole or near-whole chromosomes in part of the cells (chromosome 9 in
+NA19208 at 73% and in several lines at 11-21%; 13q in NA20533 at 78%), and copy-neutral LOH of 4q at 8-10% in a handful
+of lines. No gain of chromosome 12 passes the floors in this cohort.
+
+Caveats of this platform, written down: the one-copy level is -0.40 (not -0.55), so mosaic fractions read from the LRR
+run below those from the BAF; the baseline band split is 0.01-0.03 per sample and sets the floor of what the BAF can
+confirm (a gain of a whole chromosome needs about 14% of cells here); the Y level varies between Y haplogroups; CHM13's
+assembled heterochromatin and acrocentric arms carry mismapped probes (not used, or tagged); the BAF SD threshold of 0.06
+flags 12% of this cohort, which is read with the flag.

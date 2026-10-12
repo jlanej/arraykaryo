@@ -34,3 +34,4 @@ repository.
 | 0.5.2 | pedigree (48,784 probes, 331 trios, the HWE screen) | example | 1 | 134 s | 2.6 GB |
 | 0.5.3 | events: window tracks | example | 8 | 546 s | - |
 | 0.5.3 | events: calls on 2,124 samples (6.2 core-s per sample over 23 chromosomes) | example | 8 | 1,406 s | 5.0 GB |
+| 0.5.4 | events: calls on 2,124 samples with the baseline split, the tags | example | 8 | 1,409 s (1,924 s with the window tracks) | 4.95 GB |

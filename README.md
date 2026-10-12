@@ -7,8 +7,11 @@ homozygous, in every cell or in part of them - with runs of homozygosity, each w
 self-contained report. The array sibling of [triokaryo](https://github.com/jlanej/triokaryo), which reads the same
 events from whole-genome sequencing of parent-offspring trios.
 
-**Status: 0.5.0 - milestones 1 to 5 of [PROMPT.md](PROMPT.md): the whole chain works and is tested on the mock.** Milestone 6, the
-public example validated and documented, is next. Methods and every threshold with its source:
+**Status: 1.0.0 - every milestone of [PROMPT.md](PROMPT.md).** The whole chain works and is tested on the mock (every planted
+event, family, complement and QC failure recovered; no event on a null sample), its detection curve is measured at the
+example array's probe spacing ([docs/calibration](docs/calibration/README.md)), and the public example - a 1000 Genomes
+export of 2,141 lymphoblastoid lines - is run, validated against its known pedigree and sexes and against the events
+triokaryo read from sequencing, and documented with the platform's caveats ([docs/example](docs/example/README.md)). Methods and every threshold with its source:
 [docs/METHODS.md](docs/METHODS.md); every file and column: [docs/OUTPUT.md](docs/OUTPUT.md); timings: [benchmarks/](benchmarks/README.md).
 
 ## What goes in
@@ -20,6 +23,7 @@ are recognised from the contig lengths. Optionally a sample sheet (reported sex,
 
 ```bash
 arraykaryo run --bcf cohort.bcf --out out --threads 8 --sample-sheet samples.tsv --pedigree trios.tsv   # everything below, one log
+#   add --pages digest on a cohort of thousands: pages and figures only for the digest's samples, the sex disagreements and the hard failures
 arraykaryo inspect cohort.bcf                                   # samples, contigs and assembly, fields, the conventions seen; refuses an export without GT/LRR/BAF
 arraykaryo extract --bcf cohort.bcf --out out --threads 8       # one pass into out/cache: per-chromosome arrays of GT, LRR and BAF, a probe table, a manifest
 arraykaryo qc --out out --sample-sheet samples.tsv --threads 8  # probe QC, sample QC (pass or flagged with the reason), the GC-wave correction, the cohort reference
@@ -57,10 +61,14 @@ apptainer run arraykaryo.sif inspect cohort.bcf
 
 ## The example
 
-A public 1000 Genomes array export (2,141 samples, about 2.4 million probes) is the example and the validation set:
-its known trios, its reported sexes, and the samples whose large events triokaryo read from sequencing. How to run it
-and what to check: [docs/example/README.md](docs/example/README.md). No data and no data locations live in this
-repository; the example is pointed at by environment variables.
+A public 1000 Genomes array export (2,141 samples, 2.4 million probes, CHM13 coordinates) is the example and the validation
+set: 331 known trios and 47 duos recovered from the genotypes alone with 779 agreeing relationships and no claimed parent
+unrelated; 2,126 of 2,130 reported sexes agree, the four that do not being two XX "males" (a swap or an XX male) and two
+47,XXY, with the lymphoblastoid lines' partial losses of Y (12 men) and of an X (29 women) listed with their cell fractions;
+HG01103's mosaic losses of 2q and 14q and NA12748's mosaic gain of 13q and terminal loss of 21q found where whole-genome
+sequencing put them. The platform's own numbers - a one-copy level of -0.40, a baseline band split of 0.01-0.03, mismapped
+probes on CHM13's heterochromatin and acrocentric arms - are measured and written down: [docs/example/README.md](docs/example/README.md).
+No data and no data locations live in this repository; the example is pointed at by environment variables.
 
 ## Conventions
 
