@@ -337,11 +337,14 @@ the evidence is thin (under 20 heterozygous calls, under 100 probes), where the 
 the event), and the names of the artefact-prone regions it mostly lies in (the MHC, the 8p23.1 and 17q21.31 inversions, the
 X-transposed region, the centromere flanks, the chromosome ends, an acrocentric short arm) - tagged, never removed from
 the table; the digest leaves out a copy change read from the LRR alone in such a region (on the example these are the
-commonest residual calls: a few hundred probes at the centromere flanks, +0.10 to +0.13, no heterozygous calls). **The cohort's own artefact map**: a 1-Mb bin where an event of the same type is called in 5% or more of the samples read
-is recurrent - a probe cluster the array reads oddly, or a common copy-number polymorphism (*example*: the centromere
-flanks of chromosomes 5 and 10 in 14% of samples, 16p11.2 in 13%) - and an event whose bins are mostly recurrent is tagged
-`recurrent (N samples)`, never removed from the table; the digest leaves out a copy change read from the LRR alone in a
-recurrent region as it does in an artefact-prone one. A sample whose event count exceeds the cohort median by 3 robust SD
+commonest residual calls: a few hundred probes at the centromere flanks, +0.10 to +0.13, no heterozygous calls). **The cohort's own artefact map**: a 1-Mb bin where an event of the same type is called in 2% or more of the samples read
+(three at least) is recurrent - a probe cluster the array reads oddly, or a common copy-number polymorphism (*example*: the
+centromere flanks of chromosomes 5 and 10 in 14% of samples, 16p11.2 in 13%, the 9q12 heterochromatin block of CHM13 in
+2.3%) - and an event whose bins are mostly recurrent is tagged `recurrent (N samples)`, never removed from the table. An
+event whose probes lie five times further apart than the chromosome's median spacing is tagged `probe-sparse` (*example*:
+450 probes over the 42 Mb of CHM13's 9p11-q21 heterochromatin and segmental duplications read as a 44% "gain" in 48
+samples, from the LRR alone). The digest leaves out a copy change read from the LRR alone in a recurrent, probe-sparse or
+artefact-prone region, and any mosaic copy change the BAF split does not confirm. A sample whose event count exceeds the cohort median by 3 robust SD
 is flagged `event_count`.
 
 **Karyotype string** (`karyotype.py`): triokaryo's grammar - the modal number and complement, the constitutional terms in

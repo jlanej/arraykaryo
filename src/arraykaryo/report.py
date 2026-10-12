@@ -380,6 +380,8 @@ class Report:
                 why = "the sample fails QC (not to be read)"
             elif e["artefact"] != NA and e["type"] in ("gain", "loss") and not finite(num(e["f_baf"])):
                 why = "a copy change read from the LRR alone in an artefact-prone or recurrent region (%s)" % e["artefact"]
+            elif e["type"] in ("gain", "loss") and e["source"] == "segmentation" and finite(f) and f < 0.9 and not finite(num(e["f_baf"])):
+                why = "a mosaic copy change read from the LRR alone (no BAF split to confirm it)"
             elif e["source"] == "sex" and finite(f) and f < 0.9 and not sex_mosaics:
                 why = "a sex-chromosome mosaic (--no-sex-mosaics)"
             elif e["type"] == "roh" and not whole and size_mb < min_mb_roh:
@@ -402,7 +404,7 @@ class Report:
         w.append('<p class="nav"><a href="index.html">the cohort</a><a href="guide.html">the guide</a></p><h1>The largest chromosomal events in %d samples</h1>' % self.C.n_samples)
         w.append('<p class="muted">arraykaryo %s digest, %s. Every event is a reading of the array\'s LRR, BAF and genotypes, to be confirmed by a clinical karyotype or another assay before it is reported.</p>' % (__version__, time.strftime("%Y-%m-%d")))
         w.append('<div class="box"><p><b>What is on this page.</b> The %d largest of %d events, ranked by impact: a whole chromosome first (an aneuploidy, an isodisomy), then an arm, then a stretch by size; within each, an event in every cell before one in part of the cells, and a change of copy number before a copy-neutral LOH before a run of homozygosity. '
-                 'Left out and counted in digest_left_out.tsv: stretches under %g Mb, mosaic segments in under %.0f%% of the cells, runs of homozygosity under %g Mb, the calls of samples that fail QC, and copy changes read from the LRR alone in an artefact-prone region (the centromere flanks, the chromosome ends, the MHC and the inversions: tagged in events.all.tsv, never removed there). A whole chromosome is never left out for its share of cells.</p>'
+                 'Left out and counted in digest_left_out.tsv: stretches under %g Mb, mosaic segments in under %.0f%% of the cells, runs of homozygosity under %g Mb, the calls of samples that fail QC, mosaic copy changes read from the LRR alone (no BAF split to confirm them), and copy changes read from the LRR alone in an artefact-prone region (the centromere flanks, the chromosome ends, the MHC and the inversions: tagged in events.all.tsv, never removed there). A whole chromosome is never left out for its share of cells.</p>'
                  '<p><b>How to read a figure.</b> <b>LRR</b> is the probe intensity against the cohort on a log2 scale: 0 is two copies, about -0.5 one, about +0.35 three; a mosaic sits in between in proportion to the share of cells. <b>BAF</b> is the B-allele share at the sample\'s heterozygous calls: one band at 0.5 means two balanced copies; two bands mean an imbalance (a gain, a loss, or a copy-neutral LOH when the LRR stays at 0); no heterozygous calls mean one copy or two identical copies.</p></div>' % (
                      len(shown), len(self.events), min_mb, 100 * min_f, min_mb_roh))
         w.append("<h2>The events</h2>" + table(["rank", "sample", "event", "size_mb", "f", "karyotype", "note"], rows, sortable=False, link=("sample", lambda r: self.sample_href(r["sample"]))) if rows else "<p class=\"muted\">no event passes the floors</p>")

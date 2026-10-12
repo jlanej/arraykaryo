@@ -33,7 +33,7 @@ from .sex import read_sex
 from .util import NA, finite, log, mark_done, num, read_json, robust_sd, write_json, write_tsv
 from .windows import save_tracks, tracks_for_block, window_layout
 
-PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, chrom_z=4.0, chrom_lrr_min=0.03, recurrent_frac=0.05, d_min=0.02, d_llr=30.0, loh_d_min=0.04, loh_llr=50.0, loh_n_het_min=50, n_het_min=20, het_floor=0.2, n_called_min=40, whole_frac=0.9,
+PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, chrom_z=4.0, chrom_lrr_min=0.03, recurrent_frac=0.02, sparse_x=5.0, d_min=0.02, d_llr=30.0, loh_d_min=0.04, loh_llr=50.0, loh_n_het_min=50, n_het_min=20, het_floor=0.2, n_called_min=40, whole_frac=0.9,
               const_f=0.9, alpha=0.01, q_floor=20.0, merge_div=2.0, block=64, l3_default=0.40, l1_literature=-0.66, sample_block=16)
 # lrr_min / lrr_z: the smallest LRR shift and its significance (the median's SE from the sample's own noise); lrr_alone: below this |LRR| a
 # mosaic gain or loss needs the BAF split too (residual GC waves of a few hundredths survive the correction and must not become events),
@@ -417,6 +417,16 @@ def probed_spans(G, chrom, pos, keep):
     return out
 
 
+def sparse_tag(seg_bp, n_probes, chrom_spacing, sparse_x):
+    """'probe-sparse (N kb per probe)' when the segment's probes are sparse_x times further apart than the chromosome's median
+    spacing: a probe desert (the centromere, the heterochromatin blocks an assembly like CHM13 carries) where a few probes
+    make a level nobody can trust."""
+    if n_probes <= 0 or chrom_spacing <= 0:
+        return ""
+    sp = seg_bp / float(n_probes)
+    return ("probe-sparse (%.0f kb per probe)" % (sp / 1000.0)) if sp > sparse_x * chrom_spacing else ""
+
+
 def artefact_tags(arts, chrom, start, end):
     tags = []
     for name, c, a, b, why in arts:
@@ -469,6 +479,8 @@ def call_one(ctx, i, p, L1, L3):
         if not is_x:
             probed_total += max(probed["chrom"][1] - probed["chrom"][0], 0)
         min_bp = int(p["min_mb"] * 1e6)
+        kept_pos = pd["pos"][pd["keep"]]
+        chrom_spacing = float(np.median(np.diff(kept_pos))) if kept_pos.size > 2 else 0.0
         segs = merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, base=base)
         for s in segs:
             span = span_class(G, chrom, s["start"], s["end"], probed, p)
@@ -490,9 +502,10 @@ def call_one(ctx, i, p, L1, L3):
                 notes.append("thin: %d probes" % s["n_probes"])
             if kind == "roh" and span == "whole":
                 notes.append("a whole chromosome without heterozygosity: an isodisomic uniparental disomy, or consanguinity (a trio decides: phase 2)")
+            tags = ",".join(t for t in (artefact_tags(ctx.artefacts, chrom, s["start"], s["end"]), sparse_tag(s["end"] - s["start"] + 1, s["n_probes"], chrom_spacing, p["sparse_x"])) if t)
             events.append(dict(sample=name, chrom=chrom, start=s["start"], end=s["end"], size_bp=s["end"] - s["start"] + 1, span=span, bands=G.band_range(chrom, s["start"], s["end"]), type=kind,
                                f=f, f_lrr=f_lrr, f_baf=f_baf, constitutional=int(const), n_probes=s["n_probes"], n_het=s["n_het"], n_called=s["n_called"], lrr=s["lrr"], lrr_se=s["lrr_se"],
-                               d=s["d"], d_llr=s["d_llr"], het_ratio=s["het_ratio"], source="segmentation", artefact=artefact_tags(ctx.artefacts, chrom, s["start"], s["end"]) or NA,
+                               d=s["d"], d_llr=s["d_llr"], het_ratio=s["het_ratio"], source="segmentation", artefact=tags or NA,
                                note="; ".join(notes) or NA, qc_pass=q.get("pass", NA), sample_flags=q.get("flags", NA)))
         # runs of homozygosity (autosomes; the X of an XX sample with two X copies - a single X is homozygous by nature)
         x_copies = num(sx.get("x_copies", ""))
