@@ -33,13 +33,15 @@ from .sex import read_sex
 from .util import NA, finite, log, mark_done, num, read_json, robust_sd, write_json, write_tsv
 from .windows import save_tracks, tracks_for_block, window_layout
 
-PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, chrom_z=4.0, chrom_lrr_min=0.03, d_min=0.02, d_llr=30.0, n_het_min=20, het_floor=0.2, n_called_min=40, whole_frac=0.9,
+PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, chrom_z=4.0, chrom_lrr_min=0.03, recurrent_frac=0.05, d_min=0.02, d_llr=30.0, loh_d_min=0.04, loh_llr=50.0, loh_n_het_min=50, n_het_min=20, het_floor=0.2, n_called_min=40, whole_frac=0.9,
               const_f=0.9, alpha=0.01, q_floor=20.0, merge_div=2.0, block=64, l3_default=0.40, l1_literature=-0.66, sample_block=16)
 # lrr_min / lrr_z: the smallest LRR shift and its significance (the median's SE from the sample's own noise); lrr_alone: below this |LRR| a
 # mosaic gain or loss needs the BAF split too (residual GC waves of a few hundredths survive the correction and must not become events),
 # except a whole chromosome or arm whose level stands chrom_z robust SD out among the sample's chromosomes;
-# d_min / d_llr: the smallest band deviation and its log-likelihood ratio against d = 0 (the segmentation chose the segment on the same
-# data, so the ratio asks more than an unselected test would); het_floor: the heterozygous ratio of a run of homozygosity.
+# d_min / d_llr: the smallest band deviation beyond the sample's baseline and its log-likelihood ratio against the baseline (the segmentation
+# chose the segment on the same data, so the ratio asks more than an unselected test would); loh_*: a copy-neutral LOH has no LRR change to
+# back it, so its split alone must be larger (0.04 beyond the baseline: a cell fraction of 0.08); het_floor: the heterozygous ratio of a run
+# of homozygosity.
 EVENT_COLS = ["sample", "chrom", "start", "end", "size_bp", "span", "bands", "type", "f", "f_lrr", "f_baf", "constitutional", "n_probes", "n_het", "n_called", "lrr", "lrr_se", "d", "d_llr",
               "het_ratio", "source", "artefact", "note", "qc_pass", "sample_flags"]
 ROH_COLS = ["sample", "chrom", "start", "end", "size_bp", "n_probes", "n_het", "bands", "lrr", "whole_chromosome", "is_event"]
@@ -57,6 +59,9 @@ def tracks_chrom(args):
     pr = C.probes(chrom)
     keep = masks["keep"] & (~pr.par if chrom == "chrX" else np.ones(pr.n, bool))
     keep_gt = masks["keep_gt"] & (~pr.par if chrom == "chrX" else np.ones(pr.n, bool))
+    if C.genome.is_acrocentric_p(chrom, "p"):
+        keep &= pr.pos > C.genome.p_end[chrom]
+        keep_gt &= pr.pos > C.genome.p_end[chrom]
     bounds, mids, spans = window_layout(pr.pos, keep, w)
     shift = masks["baf_shift"]
     qc = read_sample_qc(out)
@@ -183,6 +188,9 @@ def call_chromosome(ctx, i, chrom, p, noise, x_base=0.0, use_het=True, sample_sd
     m = ctx.masks[chrom]
     keep = m["keep"] & (~pr.par if chrom == "chrX" else True)
     keep_gt = m["keep_gt"] & (~pr.par if chrom == "chrX" else True)
+    if ctx.G.is_acrocentric_p(chrom, "p"):
+        keep = keep & (pr.pos > ctx.G.p_end[chrom])
+        keep_gt = keep_gt & (pr.pos > ctx.G.p_end[chrom])
     L = ctx.corr.apply(ctx.C, chrom, sample_idx=[i])[0].astype(float) - x_base
     g = np.asarray(ctx.C.gt(chrom)[i])
     b = np.asarray(ctx.C.baf(chrom)[i], dtype=np.float32)
@@ -241,6 +249,7 @@ def type_segment(s, p, L1, L3, use_het=True, base=None, span="stretch"):
     lrr_sig = finite(s["lrr"]) and abs(s["lrr"]) >= max(p["lrr_min"], p["lrr_z"] * s["lrr_se"])
     d_eff = float(np.sqrt(max(s["d"] ** 2 - d0 ** 2, 0.0))) if finite(s["d"]) else np.nan        # the split beyond the sample's baseline
     d_sig = use_het and finite(s["d"]) and (s["d"] - d0) >= max(p["d_min"], 3.0 * s0) and s["d_llr"] >= p["d_llr"] and s["n_het"] >= p["n_het_min"]
+    loh_sig = d_sig and (s["d"] - d0) >= max(p["loh_d_min"], 4.0 * s0) and s["d_llr"] >= p["loh_llr"] and s["n_het"] >= p["loh_n_het_min"]   # with no LRR change the split carries the call alone
     big_span = span in ("whole", "p", "q") and finite(s["lrr"]) and abs(s["lrr"]) >= max(p["chrom_lrr_min"], p["chrom_z"] * s_chrom)
     het_floor = use_het and finite(s["het_ratio"]) and s["het_ratio"] <= p["het_floor"] and s["n_called"] >= p["n_called_min"]
     kind = ""
@@ -256,7 +265,7 @@ def type_segment(s, p, L1, L3, use_het=True, base=None, span="stretch"):
             kind = "roh"
     elif lrr_sig and (d_sig or abs(s["lrr"]) >= p["lrr_alone"] or big_span):
         kind = "gain" if s["lrr"] > 0 else "loss"
-    elif d_sig:
+    elif loh_sig:
         kind = "loh"
     if not kind:
         return "", np.nan, np.nan, np.nan, notes
@@ -612,6 +621,7 @@ def run_events(out, cache_dir=None, threads=1, params=None, figures="flagged", l
     # tables
     ev_rows = [e for r in results for e in r["events"]]
     roh_rows = [x for r in results for x in r["rohs"]]
+    n_recurrent = tag_recurrent(ev_rows, len(passing), p["recurrent_frac"])
     order = C.genome.chrom_order()
     ev_rows.sort(key=lambda e: (C.samples.index(e["sample"]), order.get(e["chrom"], 99), e["start"]))
     roh_rows.sort(key=lambda e: (C.samples.index(e["sample"]), order.get(e["chrom"], 99), e["start"]))
@@ -650,6 +660,7 @@ def run_events(out, cache_dir=None, threads=1, params=None, figures="flagged", l
         k = "%s %s%s" % (e["type"], e["span"], "" if e["constitutional"] else " mosaic")
         by_type[k] = by_type.get(k, 0) + 1
     n_art = sum(1 for e in ev_rows if e["artefact"] != NA)
+    log_fn("%d events tagged as recurrent (the same type in %.0f%% or more of the samples read over the same 1-Mb bins)" % (n_recurrent, 100 * p["recurrent_frac"]), "events")
     n_art_lrr_only = sum(1 for e in ev_rows if e["artefact"] != NA and e["type"] in ("gain", "loss") and not finite(e["f_baf"]))
     summary = dict(samples=C.n_samples, called=len(passing), events=len(ev_rows), samples_with_events=len({e["sample"] for e in ev_rows}), by_type=by_type, roh_runs=len(roh_rows),
                    roh_events=sum(1 for x in roh_rows if x["is_event"]), in_artefact_regions=n_art, in_artefact_regions_without_baf=n_art_lrr_only, calibration=calib, event_count_cut=cut, params=p, seconds=time.time() - t0)
@@ -666,6 +677,30 @@ def run_events(out, cache_dir=None, threads=1, params=None, figures="flagged", l
         log_fn("figures for %d samples in %.1f s -> events/figures/" % (n, time.time() - t1), "events")
     mark_done(out, "events", dict(seconds=time.time() - t0))
     return summary
+
+
+def tag_recurrent(ev_rows, n_called, frac=0.05, bin_bp=1_000_000):
+    """The cohort's own artefact map: a 1-Mb bin where an event of the same type is called in `frac` of the samples read or more is
+    recurrent (a probe cluster the array reads oddly, a common copy-number polymorphism), and an event whose bins are mostly
+    recurrent is tagged 'recurrent (N samples)' - tagged, not removed. Returns the number tagged."""
+    cov = {}
+    for e in ev_rows:
+        if e["chrom"] in ("chrX", "chrY") or e["source"] != "segmentation":
+            continue
+        for k in range(int(e["start"]) // bin_bp, int(e["end"]) // bin_bp + 1):
+            cov.setdefault((e["chrom"], k, e["type"]), set()).add(e["sample"])
+    hot = {k: len(v) for k, v in cov.items() if len(v) >= max(3, frac * n_called)}
+    n = 0
+    for e in ev_rows:
+        if e["chrom"] in ("chrX", "chrY") or e["source"] != "segmentation":
+            continue
+        bins = [(e["chrom"], k, e["type"]) for k in range(int(e["start"]) // bin_bp, int(e["end"]) // bin_bp + 1)]
+        hits = [hot[b] for b in bins if b in hot]
+        if len(hits) >= 0.5 * len(bins):
+            tag = "recurrent (%d samples)" % int(np.median(hits))
+            e["artefact"] = tag if e["artefact"] == NA else e["artefact"] + "," + tag
+            n += 1
+    return n
 
 
 def _pool(fn, jobs, threads):

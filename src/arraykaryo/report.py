@@ -379,7 +379,7 @@ class Report:
             if hard:
                 why = "the sample fails QC (not to be read)"
             elif e["artefact"] != NA and e["type"] in ("gain", "loss") and not finite(num(e["f_baf"])):
-                why = "a copy change read from the LRR alone in an artefact-prone region (%s)" % e["artefact"]
+                why = "a copy change read from the LRR alone in an artefact-prone or recurrent region (%s)" % e["artefact"]
             elif e["source"] == "sex" and finite(f) and f < 0.9 and not sex_mosaics:
                 why = "a sex-chromosome mosaic (--no-sex-mosaics)"
             elif e["type"] == "roh" and not whole and size_mb < min_mb_roh:

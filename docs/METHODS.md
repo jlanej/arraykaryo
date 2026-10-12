@@ -95,6 +95,7 @@ against a band SD of 0.03-0.05 at a heterozygous call; the band deviation d fitt
 | `GenTrain_Score` | < 0.6 | Illumina's GenTrain guidance |
 | `Cluster_Sep` | < 0.3 | Illumina: overlapping clusters |
 | PAR probe | kept, tagged `par` | used for the autosomal-like X only |
+| acrocentric short arm (13p, 14p, 15p, 21p, 22p) | not used | an array's probes lifted into an assembly that carries those arms (CHM13 does) are mismapped: *example*, 1,226 spurious arm events before the rule |
 
 On the Y the call rate is taken among the samples with a Y (its PAR probes among everyone). Every threshold is a parameter
 (`THRESHOLDS` in `qc.py`, written with its source to `qc/summary.json`).
@@ -288,7 +289,7 @@ ratio 1):
 | --- | --- |
 | run of homozygosity | heterozygous ratio at or under 0.2 over 40 or more called probes (the calls left are errors, whatever their BAF says); LRR at one copy (under half the one-copy level) makes it a constitutional deletion, LRR up a gain without heterozygosity; a run under 10 Mb is a run (roh.all.tsv), not an event |
 | gain / loss | the median LRR at least 0.025 and 5 standard errors from 0 (the median's SE from the sample's own probe noise), with the band deviation significant too (beyond the baseline as above, a likelihood ratio of 30 or more over 20 or more heterozygous calls) unless the shift reaches 0.10 on its own - residual GC waves of a few hundredths survive the correction and must not become events - or the segment is a whole chromosome or arm whose level stands four robust SD out among the sample's chromosomes (never under 0.03) |
-| copy-neutral LOH | LRR flat, d significant |
+| copy-neutral LOH | LRR flat, and - with no LRR change to back it - a split of at least 0.04 beyond the baseline and four times its spread (a cell fraction of 0.08), a likelihood ratio of 50 or more over 50 or more heterozygous calls; the brief's floors (0.10 for a whole chromosome, 0.20 for a 2-10 Mb stretch) lie above it |
 | nothing | everything else (a segment the noise cut) |
 
 On the single X of a man the same rules hold with no BAF reading; the X-transposed region (Xq21.31-q21.32, 99% identical
@@ -336,8 +337,12 @@ the evidence is thin (under 20 heterozygous calls, under 100 probes), where the 
 the event), and the names of the artefact-prone regions it mostly lies in (the MHC, the 8p23.1 and 17q21.31 inversions, the
 X-transposed region, the centromere flanks, the chromosome ends, an acrocentric short arm) - tagged, never removed from
 the table; the digest leaves out a copy change read from the LRR alone in such a region (on the example these are the
-commonest residual calls: a few hundred probes at the centromere flanks, +0.10 to +0.13, no heterozygous calls). A sample
-whose event count exceeds the cohort median by 3 robust SD is flagged `event_count`.
+commonest residual calls: a few hundred probes at the centromere flanks, +0.10 to +0.13, no heterozygous calls). **The cohort's own artefact map**: a 1-Mb bin where an event of the same type is called in 5% or more of the samples read
+is recurrent - a probe cluster the array reads oddly, or a common copy-number polymorphism (*example*: the centromere
+flanks of chromosomes 5 and 10 in 14% of samples, 16p11.2 in 13%) - and an event whose bins are mostly recurrent is tagged
+`recurrent (N samples)`, never removed from the table; the digest leaves out a copy change read from the LRR alone in a
+recurrent region as it does in an artefact-prone one. A sample whose event count exceeds the cohort median by 3 robust SD
+is flagged `event_count`.
 
 **Karyotype string** (`karyotype.py`): triokaryo's grammar - the modal number and complement, the constitutional terms in
 chromosome order (`+21`, `del(1)(p36.32p36.21)`, `roh(1)(q21.2q24.1)`, `upd(15)(iso)?`), and one line per mosaic with its

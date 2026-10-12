@@ -509,7 +509,12 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
         keep_gt = pr.snv & ~pr.intensity_only
         reasons = [[] for _ in range(P)]
         ids = pr.ids
+        acro = (pr.pos <= C.genome.p_end.get(c, 0)) if C.genome.is_acrocentric_p(c, "p") else np.zeros(P, bool)   # the short arm of an acrocentric: no usable probes
+        keep &= ~acro
+        keep_gt &= ~acro
         for i in range(P):
+            if acro[i]:
+                reasons[i].append("acrocentric_p")
             if pr.intensity_only[i]:
                 reasons[i].append("intensity_only")
             elif not pr.snv[i]:
