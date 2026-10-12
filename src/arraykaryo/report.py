@@ -473,18 +473,33 @@ def fig_froh(out, kar):
 
 
 def run_report(out, cache_dir=None, pages="flagged", top=25, digest_min_mb=10.0, digest_min_f=0.1, threads=1, log_fn=log):
+    """pages: 'flagged' (flagged samples, samples with an event, samples not plainly XX or XY), 'digest' (the digest's samples, the
+    sex disagreements and the hard QC failures: a cohort of thousands where most samples carry some call stays readable), or
+    'all'. Figures missing for a page's sample are drawn here."""
     t0 = time.time()
     R = Report(out, cache_dir)
     rdir = os.path.join(out, "report")
     os.makedirs(os.path.join(rdir, "samples"), exist_ok=True)
     os.makedirs(os.path.join(rdir, "figures"), exist_ok=True)
-    from .plots import fig_landscape
+    from .plots import draw_sample_figures, fig_landscape
     if R.events:
         fig_landscape(out, R.events, R.G, R.C.samples)
     if R.kar:
         fig_froh(out, R.kar)
-    want = set(R.C.samples) if pages == "all" else ({e["sample"] for e in R.events} | {s for s, q in R.qc.items() if q.get("flags", NA) != NA} | {s for s, r in R.sex.items() if r["mosaic"] != NA or r["check"] not in ("agrees", NA, "not read")})
+    shown, left = R.write_digest(top=top, min_mb=digest_min_mb, min_f=digest_min_f)
+    odd_sex = {s for s, r in R.sex.items() if r["mosaic"] != NA or r["check"] not in ("agrees", NA, "not read")}
+    if pages == "all":
+        want = set(R.C.samples)
+    elif pages == "digest":
+        digest_samples = {r["sample"] for r in read_tsv(os.path.join(rdir, "digest.tsv"))}
+        want = digest_samples | {s for s, q in R.qc.items() if q.get("hard_fail") == "1"} | {s for s, r in R.sex.items() if r["check"] not in ("agrees", NA, "not read", "")}
+    else:
+        want = {e["sample"] for e in R.events} | {s for s, q in R.qc.items() if q.get("flags", NA) != NA} | odd_sex
     R.pages = {s for s in R.C.samples if s in want}
+    missing = [s for s in sorted(R.pages) if s in {e["sample"] for e in R.events} and not os.path.exists(os.path.join(out, "events", "figures", s, "genome.png"))]
+    if missing and os.path.exists(os.path.join(out, "events", "windows")):
+        n = draw_sample_figures(out, R.cache_dir, missing, threads, log_fn)
+        log_fn("figures drawn for %d samples of the pages that had none" % n, "report")
     for s in sorted(R.pages):
         R.write_sample_page(s)
     R.write_index()

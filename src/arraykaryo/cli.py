@@ -237,7 +237,7 @@ def build_parser():
 
 
 def add_report_args(p):
-    p.add_argument("--pages", default="flagged", choices=["flagged", "all"], help="per-sample pages for flagged samples and samples with events (default), or for all")
+    p.add_argument("--pages", default="flagged", choices=["flagged", "digest", "all"], help="per-sample pages for flagged samples and samples with events (default), for the digest's samples, the sex disagreements and the hard failures only (digest: a large cohort), or for all; figures missing for a page are drawn")
     p.add_argument("--top", type=int, default=25, help="events on the digest (default 25)")
     p.add_argument("--digest-min-mb", type=float, default=10.0, help="the smallest stretch on the digest (default 10 Mb)")
     p.add_argument("--digest-min-f", type=float, default=0.1, help="the smallest mosaic cell fraction on the digest for an arm or stretch (default 0.1)")

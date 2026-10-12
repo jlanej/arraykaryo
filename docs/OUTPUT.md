@@ -97,7 +97,8 @@ spans) and the tracks for every sample (lrr_med, d, d_llr, n_het, het_ratio, n_c
 
 ## DIR/report/ (`arraykaryo report`)
 
-`index.html` (the cohort page), `samples/<sample>.html` (flagged samples and samples with events; `--pages all`),
+`index.html` (the cohort page), `samples/<sample>.html` (flagged samples and samples with events; `--pages digest` for the
+digest's samples, the sex disagreements and the hard failures only, as a large cohort needs; `--pages all`),
 `guide.html` (every column, colour and rule; the pattern cards), `digest.html` with `digest.tsv` (rank, sample, event in
 words, chrom, start, end, size_mb, span, type, f, f_lrr, f_baf, karyotype, note) and `digest_left_out.tsv` (the same with
 `left_out`, the reason). `figures/landscape`, `figures/froh`, `figures/patterns`. All pages are self-contained (figures
