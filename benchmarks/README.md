@@ -32,3 +32,5 @@ repository.
 | 0.5.2 | qc (two passes, figures) | example | 8 | 373 s | 4.1 GB (the probe table was held in memory; streamed from 0.5.2) |
 | 0.5.2 | sex (figures for 51 samples) | example | 1 | about 90 s | - |
 | 0.5.2 | pedigree (48,784 probes, 331 trios, the HWE screen) | example | 1 | 134 s | 2.6 GB |
+| 0.5.3 | events: window tracks | example | 8 | 546 s | - |
+| 0.5.3 | events: calls on 2,124 samples (6.2 core-s per sample over 23 chromosomes) | example | 8 | 1,406 s | 5.0 GB |
