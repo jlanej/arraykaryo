@@ -272,14 +272,28 @@ an XY sample the baseline is the sample's own X level and the heterozygous track
 chromosomes of 400 windows receive no breakpoint; a planted 300-window segment (1.5 and 2 SD on two tracks) is found
 within two windows.
 
-**Typing** from the probe-level evidence of each segment against the baseline (LRR 0, d 0, heterozygous ratio 1):
+**The sample's baseline**. A real array gives every sample a baseline band split: the heterozygous cluster of each probe
+sits a little off 0.5 in its own way, so the symmetric two-band mixture fitted to any long segment finds a d of 0.01-0.03
+even where nothing is there (*example*: 0.014 for a typical sample), and thousands of heterozygous calls make that
+"significant" against d = 0. So before typing, d is fitted per chromosome arm over the genome (most arms carry no event):
+the median is the sample's baseline split d0, the robust spread its noise; a segment's split must exceed d0 by 0.02 and by
+three times that spread, its log-likelihood ratio is taken against d0, and the cell fraction comes from the split beyond
+the baseline, sqrt(d^2 - d0^2). Likewise the median corrected LRR per chromosome and the robust spread of those medians
+across the chromosomes (0.005-0.008 on the example) is the noise a whole-chromosome or arm level has to beat.
+
+**Typing** from the probe-level evidence of each segment against the baseline (LRR 0, d at the sample's d0, heterozygous
+ratio 1):
 
 | reading | rule |
 | --- | --- |
-| run of homozygosity | heterozygous ratio at or under 0.2 over 40 or more called probes (the calls left are errors, whatever their BAF says); LRR at one copy (under half the one-copy level) makes it a constitutional deletion, LRR up a gain without heterozygosity |
-| gain / loss | the median LRR at least 0.025 and 5 standard errors from 0 (the median's SE from the sample's own probe noise), with the band deviation significant too (d at least 0.02, log-likelihood ratio against d = 0 at least 30 over 20 or more heterozygous calls) unless the shift reaches 0.10 on its own - residual GC waves of a few hundredths survive the correction and must not become events |
+| run of homozygosity | heterozygous ratio at or under 0.2 over 40 or more called probes (the calls left are errors, whatever their BAF says); LRR at one copy (under half the one-copy level) makes it a constitutional deletion, LRR up a gain without heterozygosity; a run under 10 Mb is a run (roh.all.tsv), not an event |
+| gain / loss | the median LRR at least 0.025 and 5 standard errors from 0 (the median's SE from the sample's own probe noise), with the band deviation significant too (beyond the baseline as above, a likelihood ratio of 30 or more over 20 or more heterozygous calls) unless the shift reaches 0.10 on its own - residual GC waves of a few hundredths survive the correction and must not become events - or the segment is a whole chromosome or arm whose level stands four robust SD out among the sample's chromosomes (never under 0.03) |
 | copy-neutral LOH | LRR flat, d significant |
 | nothing | everything else (a segment the noise cut) |
+
+On the single X of a man the same rules hold with no BAF reading; the X-transposed region (Xq21.31-q21.32, 99% identical
+to a stretch of Yp, so that its probes read the X and the Y copies in a man: two copies, heterozygous-looking calls) is an
+artefact region and a man's segment lying mostly inside it is left alone.
 
 Adjacent segments typed as nothing are joined without condition (a boundary between two nothings is noise), so that a
 chromosome whose every piece is a little high reads as one segment and is typed as a whole; a typed segment takes in an
@@ -292,8 +306,8 @@ is not repeated.
 
 **Cell fraction**: the segment's d is fitted on all its heterozygous calls (a subsample of 4,000 beyond that) with the
 sample's robust band SD - the band SD is not fitted jointly with d, because two bands close together and one wider band are
-nearly the same mixture and a joint fit on a long segment reports small splits that are not there. From the band deviation,
-the primary estimate - gain f = 4d/(1-2d), loss f = 4d/(1+2d), copy-neutral LOH
+nearly the same mixture and a joint fit on a long segment reports small splits that are not there - and read beyond the
+sample's baseline split. From the band deviation, the primary estimate - gain f = 4d/(1-2d), loss f = 4d/(1+2d), copy-neutral LOH
 f = 2d (the band positions (1+f)/(2+f), 1/(2-f) and (1+f)/2 solved for f); and from the LRR on the cohort's copy scale, the
 secondary - the one-copy level from the male X against the female X (sex step; -0.53 to -0.55 on the mock, which simulates
 -0.55), the three-copy level from the median LRR of any constitutional trisomy found (0.33 on the mock, which simulates
@@ -315,12 +329,15 @@ decide (the pedigree step already names the chromosome whose Mendelian errors st
 single X (an XY sample, or a 45,X).
 
 **Sex chromosomes**: a whole X gained or lost and a Y lost or gained, in every cell or in part, enter from the sex step with
-its cell fractions. **Flags and tags**: every event carries its evidence (LRR, its SE, d, its log-likelihood ratio, probes,
-heterozygous calls, the two cell fractions) and a note where the evidence is thin (under 20 heterozygous calls, under 100
-probes), where the sample is flagged (its QC flags travel with the event), and the names of the artefact-prone regions it
-mostly lies in (the MHC, the 8p23.1 and 17q21.31 inversions, the centromere flanks, the chromosome ends, an acrocentric
-short arm) - tagged, never removed. A sample whose event count exceeds the cohort median by 3 robust SD is flagged
-`event_count`.
+its cell fractions; a constitutional aneuploidy is read against the reported sex (a 45,X is an X lost in a reported
+female, a Y lost in a reported male), else against the complement the Y implies. **Flags and tags**: every event carries
+its evidence (LRR, its SE, d, its log-likelihood ratio, probes, heterozygous calls, the two cell fractions) and a note where
+the evidence is thin (under 20 heterozygous calls, under 100 probes), where the sample is flagged (its QC flags travel with
+the event), and the names of the artefact-prone regions it mostly lies in (the MHC, the 8p23.1 and 17q21.31 inversions, the
+X-transposed region, the centromere flanks, the chromosome ends, an acrocentric short arm) - tagged, never removed from
+the table; the digest leaves out a copy change read from the LRR alone in such a region (on the example these are the
+commonest residual calls: a few hundred probes at the centromere flanks, +0.10 to +0.13, no heterozygous calls). A sample
+whose event count exceeds the cohort median by 3 robust SD is flagged `event_count`.
 
 **Karyotype string** (`karyotype.py`): triokaryo's grammar - the modal number and complement, the constitutional terms in
 chromosome order (`+21`, `del(1)(p36.32p36.21)`, `roh(1)(q21.2q24.1)`, `upd(15)(iso)?`), and one line per mosaic with its

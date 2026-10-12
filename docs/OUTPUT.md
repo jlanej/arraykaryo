@@ -87,9 +87,10 @@ sample_flags.
 
 `roh.all.tsv`: sample, chrom, start, end, size_bp, n_probes, n_het, bands, lrr (median over the run), whole_chromosome,
 is_event (10 Mb or more). `karyotypes.tsv`: sample, complement, karyotype (the ISCN-like string), n_events, n_roh, f_roh
-(genome fraction in runs), noise_lrr, noise_d, noise_het (the sample's window-level noise per track), qc_pass, flags (NA
-karyotype for a sample not read). `summary.json`: counts by type and class, the copy-scale calibration and its source, the
-event-count cut, the parameters. `windows/<chrom>.npz` and `windows/<chrom>.<track>.npy`: the window layout (bounds, mids,
+(genome fraction in runs), noise_lrr, noise_d, noise_het (the sample's window-level noise per track), baseline_d and
+baseline_d_sd (the sample's baseline band split over its chromosome arms and its spread), chrom_level_sd (the spread of
+the sample's chromosome-level LRR), qc_pass, flags (NA karyotype for a sample not read). `summary.json`: counts by type and class, the events in artefact-prone regions (and those read from the
+LRR alone there), the copy-scale calibration and its source, the event-count cut, the parameters. `windows/<chrom>.npz` and `windows/<chrom>.<track>.npy`: the window layout (bounds, mids,
 spans) and the tracks for every sample (lrr_med, d, d_llr, n_het, het_ratio, n_called, n_lrr; samples x windows).
 
 `figures/<sample>/genome.png` and `chr_<chrom>.png` (with `.txt` sidecars): for samples with an event or a flag.
