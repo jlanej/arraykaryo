@@ -556,7 +556,7 @@ def sex_events(sx):
     reported = sx.get("reported_sex", "")
     base = sx.get("base", "")
     expected = "XX" if reported == "F" else "XY" if reported == "M" else (base if base and base != NA else "")
-    if comp and comp != NA and expected:
+    if comp and comp not in (NA, "XX", "XY") and expected:                 # a plain XX or XY against the reported sex is the sex check's finding (a swap, an XX male), not an event
         nx, ny = comp.count("X") - expected.count("X"), comp.count("Y") - expected.count("Y")
         if nx:
             out.append(("chrX", "gain" if nx > 0 else "loss", 1.0, 1.0, f_baf if "constitutional" in txt else np.nan))
@@ -644,7 +644,9 @@ def run_events(out, cache_dir=None, threads=1, params=None, figures="flagged", l
     n_ev = {}
     for r in results:
         evs = [e for e in r["events"]]
-        kar = karyotype_string([dict(e, constitutional=bool(e["constitutional"])) for e in evs], r["complement"] if r["complement"] != NA else "", r["sex_karyotype"], order)
+        # the karyotype string summarises the events with evidence: a copy change read from the LRR alone in a tagged region stays in the table only
+        summarised = [e for e in evs if not (e["artefact"] != NA and e["type"] in ("gain", "loss") and not finite(e["f_baf"]))]
+        kar = karyotype_string([dict(e, constitutional=bool(e["constitutional"])) for e in summarised], r["complement"] if r["complement"] != NA else "", r["sex_karyotype"], order)
         n_ev[r["sample"]] = len(evs)
         kar_rows.append(dict(sample=r["sample"], complement=r["complement"], karyotype=kar, n_events=len(evs), n_roh=len(r["rohs"]), f_roh=r["f_roh"],
                              noise_lrr=r["noise"][0], noise_d=r["noise"][1][1], noise_het=r["noise"][2], baseline_d=r["baseline"]["d0"], baseline_d_sd=r["baseline"]["s0"], chrom_level_sd=r["baseline"]["s_chrom"],

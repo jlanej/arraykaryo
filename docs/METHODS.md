@@ -347,7 +347,8 @@ samples, from the LRR alone). The digest leaves out a copy change read from the 
 artefact-prone region, and any mosaic copy change the BAF split does not confirm. A sample whose event count exceeds the cohort median by 3 robust SD
 is flagged `event_count`.
 
-**Karyotype string** (`karyotype.py`): triokaryo's grammar - the modal number and complement, the constitutional terms in
+**Karyotype string** (`karyotype.py`): the events with evidence (a copy change read from the LRR alone in a tagged region
+stays in the table only; a plain XX or XY against the reported sex is the sex check's finding, not a term), in triokaryo's grammar - the modal number and complement, the constitutional terms in
 chromosome order (`+21`, `del(1)(p36.32p36.21)`, `roh(1)(q21.2q24.1)`, `upd(15)(iso)?`), and one line per mosaic with its
 cell fraction: `mos 47,XY,+12[0.28]/46,XY`, `mos 46,XY,del(7)(q11.21q36.3)[0.23]/46,XY`, `mos 46,XX,loh(11)(p15.5p11.12)[0.40]/46,XX`,
 `mos 45,X[0.51]/46,XY` for a mosaic loss of Y; bands from the vendored tables.
