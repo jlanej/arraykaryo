@@ -24,9 +24,13 @@ import numpy as np
 from .baf import f_gain, f_loss, fit_d
 from .cache import Cache
 from .qc import Correction, probe_masks, read_sample_qc, update_sample_qc
-from .util import NA, finite, log, mark_done, num, write_json, write_tsv
+from .util import NA, finite, log, mark_done, num, robust_sd, write_json, write_tsv
 
-MIN_F = 0.10           # a deviation in copies this large is a mosaic
+MIN_F = 0.10           # a deviation in copies this large is a mosaic - or 3 robust SD of the cluster's levels when that is larger (the X and Y
+                       # levels of men spread by about 0.07 copies on the public example; a fixed floor would read that spread as mosaics)
+CLUSTER_Z = 3.0
+D_X_MIN = 0.03         # the band deviation at X heterozygous calls that confirms an X mosaic in an XX sample (the null's 95th percentile on the example)
+LLR_X_MIN = 30.0
 CONST_F = 0.90         # at or above: constitutional
 Y_PRESENT = 0.25       # Y copies at or above: a Y, in all or part of the cells
 ONE_COPY_DEFAULT = -0.55   # the one-copy X level relative to two copies when the cohort has no male (or no female) to fit it
@@ -217,6 +221,15 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
         y_copies = np.where(np.isfinite(y_lrr), np.minimum(2.0 ** ((y_lrr - (mY0 + 4.0)) / k), 3.0), np.nan)       # no sample with a Y: the male level assumed 4 above the absent one
     else:
         y_copies = np.full(S, np.nan)
+    # the spread of the levels within each cluster: a mosaic must stand out from it
+    anchors = np.array([anchor(float(x_copies[i]), float(y_copies[i])) for i in range(S)])
+    def spread(v, m):
+        vv = v[m & passing & np.isfinite(v)]
+        return robust_sd(vv) if vv.size >= 10 else 0.0
+    s_x = {"M": spread(x_copies, anchors == "M"), "F": spread(x_copies, anchors == "F")}
+    s_y = {"M": spread(y_copies, anchors == "M"), "F": spread(y_copies, anchors == "F")}
+    floor_x = {b: max(p["min_f"], CLUSTER_Z * s_x[b]) for b in ("M", "F")}
+    floor_y = {b: max(p["min_f"], CLUSTER_Z * s_y[b]) for b in ("M", "F")}
     # per sample
     rows, counts = [], {}
     updates = {}
@@ -228,25 +241,35 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
         mosaic, f, f_lrr, f_baf, kar = "", np.nan, np.nan, np.nan, ""
         notes = []
         # the BAF at X heterozygous calls
-        dd, hx = np.nan, x_het_bafs[i]
+        dd, hx, llr = np.nan, x_het_bafs[i], 0.0
         if hx is not None and hx.size >= 20:
             dd, _, llr = fit_d(hx, sigma=baf_sd[i] if finite(baf_sd[i]) and baf_sd[i] > 0.01 else None)
-            if llr < 10:
-                dd = 0.0
         d_x[i] = dd
+        d_sig = finite(dd) and dd >= D_X_MIN and llr >= LLR_X_MIN
         if base and np.isfinite(xc) and xc < 0.5:
             notes.append("X at %.2f copies: below one copy, not read as a complement" % xc)
             comp = ""
         elif base and np.isfinite(xc):
             dev = xc - exp_x
-            if abs(dev) >= p["min_f"]:
-                kind = "gain" if dev > 0 else "loss"
-                f_lrr = float(min(abs(dev), 1.0))
-                if base == "F" and np.isfinite(dd):
-                    f_baf = float(min(f_loss(dd) if kind == "loss" else f_gain(dd), 1.0))
-                elif base == "M" and kind == "gain" and np.isfinite(dd) and x_het_rel[i] > 0.1:
-                    f_baf = float(np.clip((1 - 2 * dd) / (1 + 2 * dd), 0, 1))
-                f = f_lrr
+            kind = "gain" if dev > 0 else "loss"
+            f_lrr = float(min(abs(dev), 1.0))
+            if base == "F" and d_sig:
+                f_baf = float(min(f_loss(dd) if kind == "loss" else f_gain(dd), 1.0))
+            elif base == "M" and kind == "gain" and d_sig and x_het_rel[i] > 0.15:
+                f_baf = float(np.clip((1 - 2 * dd) / (1 + 2 * dd), 0, 1))
+            # a mosaic stands out from its cluster's spread; in an XX sample the BAF split confirms it (or a large level change stands alone);
+            # in an XY sample an extra X shows heterozygous-looking calls, and a lost single X is not a viable state
+            big = abs(dev) >= max(0.25, 5.0 * s_x[base])
+            if base == "F":
+                called = abs(dev) >= floor_x["F"] and (finite(f_baf) or big)
+            elif kind == "gain":
+                called = abs(dev) >= floor_x["M"] and (x_het_rel[i] > 0.15 or big)
+            else:
+                called = False
+                if abs(dev) >= floor_x["M"]:
+                    notes.append("X at %.2f copies in an XY sample: a single X lost in part of the cells is not a viable state (an artefact, or a mixture)" % xc)
+            if called:
+                f = f_baf if finite(f_baf) else f_lrr
                 comp2 = comp if f >= p["const_f"] else ("X" * (exp_x + (1 if kind == "gain" else -1)) + ("Y" if base == "M" else ""))
                 if f >= p["const_f"]:
                     mosaic = "constitutional %s" % KARYOTYPE_NAME.get(comp, comp)
@@ -256,11 +279,12 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
                     kar = "mos %s[%.2f]/%s" % (KARYOTYPE_NAME.get(comp2, "%d,%s" % (44 + len(comp2), comp2)), f, KARYOTYPE_NAME[base_comp(base)])
                     comp = base_comp(base)
             else:
+                f_lrr, f_baf = np.nan, np.nan
                 comp = base_comp(base)
                 kar = KARYOTYPE_NAME[comp]
         if base == "M" and np.isfinite(yc):
             dev_y = yc - 1.0
-            if dev_y <= -p["min_f"]:
+            if dev_y <= -floor_y["M"]:
                 fy = float(min(-dev_y, 1.0))
                 if fy >= p["const_f"]:
                     txt = "loss of Y"
@@ -271,7 +295,7 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
                 f_lrr = fy if not np.isfinite(f_lrr) else f_lrr
                 kar = ("mos 45,X[%.2f]/%s" % (fy, kar or "46,XY")) if fy < p["const_f"] else kar
                 notes.append("Y at %.2f copies against 1 (%s)" % (yc, txt))
-            elif dev_y >= p["min_f"]:
+            elif dev_y >= floor_y["M"]:
                 fy = float(min(dev_y, 2.0))
                 if fy >= p["const_f"]:
                     txt = "constitutional 47,XYY" if comp.count("Y") >= 2 else "an extra Y"
@@ -314,9 +338,11 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
     for r in rows:
         checks[r["check"]] = checks.get(r["check"], 0) + 1
     summary = dict(samples=S, x_modes=dict(one_copy=m1, two_copies=m2, scale_per_copy=k), y_modes=dict(present=mY1, absent=mY0), y_probes=y_note, note=note_modes, complements=counts, checks=checks,
+                   cluster_spread=dict(x_in_xy=s_x["M"], x_in_xx=s_x["F"], y_in_xy=s_y["M"], y_in_xx=s_y["F"]), mosaic_floor=dict(x_in_xy=floor_x["M"], x_in_xx=floor_x["F"], y_in_xy=floor_y["M"]),
                    params=p, seconds=time.time() - t0)
     write_json(summary, os.path.join(sdir, "summary.json"))
     log_fn("X modes %.3f (one copy) and %.3f (two copies), scale %.3f per copy; Y modes %.2f present, %.2f absent; %s" % (m1, m2, k, mY1 if np.isfinite(mY1) else np.nan, mY0 if np.isfinite(mY0) else np.nan, y_note), "sex")
+    log_fn("cluster spread (robust SD in copies): X in XY %.3f, X in XX %.3f, Y in XY %.3f; mosaic floors: X in XY %.2f, X in XX %.2f, Y in XY %.2f" % (s_x["M"], s_x["F"], s_y["M"], floor_x["M"], floor_x["F"], floor_y["M"]), "sex")
     log_fn("complements: %s; checks: %s" % (", ".join("%s %d" % kv for kv in sorted(counts.items())), ", ".join("%s %d" % kv for kv in sorted(checks.items()))), "sex")
     try:
         from .plots import fig_sex, fig_sex_tracks

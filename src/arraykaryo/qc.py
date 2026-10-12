@@ -36,7 +36,7 @@ from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 
 from .cache import Cache, release
-from .util import NA, log, mark_done, read_json, read_sample_sheet, robust_sd, write_json, write_tsv
+from .util import NA, fmt, log, mark_done, read_json, read_sample_sheet, robust_sd, write_json, write_tsv
 
 BLOCK = 4096
 THRESHOLDS = dict(
@@ -44,7 +44,7 @@ THRESHOLDS = dict(
     probe_lrr_median=(0.3, "per-probe cohort median of the raw LRR beyond +-0.3: a mis-normalised probe"),
     probe_lrr_sd_top=(0.01, "per-probe LRR robust SD in the top 1% of probes: a noisy probe"),
     probe_baf_shift=(0.05, "cohort median BAF at heterozygous calls more than 0.05 from 0.5: a shifted cluster (MoChA re-centres shifts above 0.01; beyond 0.05 the probe is dropped)"),
-    probe_hwe_p=(1e-10, "Hardy-Weinberg exact-test p among unrelated passing samples (PLINK's --hwe practice for arrays: 1e-10 to 1e-6)"),
+    probe_hwe_p=(1e-10, "Hardy-Weinberg exact-test p among unrelated passing samples, with an excess of heterozygotes (a probe reading two loci; PLINK's --hwe practice for arrays: 1e-10 to 1e-6); a deficit is population structure and is left alone"),
     probe_gentrain=(0.6, "Illumina GenTrain score; Illumina's guidance treats probes under 0.6 as poorly clustered"),
     probe_cluster_sep=(0.3, "Illumina cluster separation; under 0.3 the clusters overlap"),
     sample_call_rate=(0.97, "Illumina's and MoChA's recommended minimum sample call rate"),
@@ -355,12 +355,29 @@ class Correction:
 
 # ------------------------------------------------------------------------------------------------------------- the step
 
-def hwe_p(n_aa, n_ab, n_bb):
-    """Exact Hardy-Weinberg test p (Wigginton 2005), vectorised over probes by a loop over the het count distribution."""
+def het_excess(n_aa, n_ab, n_bb):
+    """Whether the heterozygote count exceeds its Hardy-Weinberg expectation: the signature of a probe that reads two loci (a
+    paralogue, a duplicated sequence) and the only Hardy-Weinberg failure that marks a bad probe. A deficit of heterozygotes is
+    what population structure does to a cohort of several populations (the Wahlund effect) and is left alone."""
+    n = n_aa + n_ab + n_bb
+    with np.errstate(all="ignore"):
+        q = (2.0 * n_bb + n_ab) / np.maximum(2.0 * n, 1)
+        expected = 2.0 * q * (1.0 - q) * n
+    return n_ab > expected
+
+
+def hwe_p(n_aa, n_ab, n_bb, screen=1e-4):
+    """Exact Hardy-Weinberg test p (Wigginton 2005) per probe; the exact test runs only where a chi-square screen (vectorised) gives
+    p under `screen`, every other probe keeps its chi-square p (far above any threshold of interest)."""
     n_aa, n_ab, n_bb = (np.asarray(x, dtype=np.int64) for x in (n_aa, n_ab, n_bb))
     n = n_aa + n_ab + n_bb
-    p = np.ones(n.shape, dtype=np.float64)
-    for i in range(n.size):
+    with np.errstate(all="ignore"):
+        q = (2.0 * n_bb + n_ab) / np.maximum(2.0 * n, 1)
+        e_aa, e_ab, e_bb = (1 - q) ** 2 * n, 2 * q * (1 - q) * n, q ** 2 * n
+        chi = np.where(n > 0, (n_aa - e_aa) ** 2 / np.maximum(e_aa, 1e-9) + (n_ab - e_ab) ** 2 / np.maximum(e_ab, 1e-9) + (n_bb - e_bb) ** 2 / np.maximum(e_bb, 1e-9), 0.0)
+    from math import erfc, sqrt
+    p = np.array([erfc(sqrt(max(c, 0.0) / 2.0)) for c in chi])            # chi-square with 1 df
+    for i in np.flatnonzero(p < screen):
         p[i] = _hwe_one(int(n_aa[i]), int(n_ab[i]), int(n_bb[i]))
     return p
 
@@ -476,8 +493,12 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     lrr_sd_diff = absd / np.sqrt(2.0) * np.sqrt(np.pi / 2.0)             # the noise SD from first differences (robust to events)
     np.savez(os.path.join(qdir, "correction.npz"), coef=coef, batch_idx=batch_idx, use_batch=use_batch, gc_mean=stats["gc_mean"], gc_sd=stats["gc_sd"], w_mean=stats["w_mean"], w_sd=stats["w_sd"],
              offset=offset, chroms=np.array(C.chroms), batches=np.array(batches), **{"ref_" + p["chrom"]: p["ref"] for p in parts2}, **{"refb_" + p["chrom"]: p["ref_batch"] for p in parts2})
-    # probe QC
-    probe_rows, keep_all, keep_gt_all, maf_all, cr_all, hwe_all = [], [], [], [], [], []
+    # probe QC (probes.tsv written chromosome by chromosome: a list of every probe's row would hold gigabytes on a 2.4-million-probe array)
+    keep_all, keep_gt_all, maf_all, cr_all, hwe_all = [], [], [], [], []
+    probe_cols = ["chrom", "pos", "id", "keep", "keep_gt", "reason", "par", "intensity_only", "snv", "call_rate", "lrr_median", "lrr_sd", "het_baf_median", "hwe_p", "gentrain", "cluster_sep", "maf", "n_called"]
+    probes_fh = open(os.path.join(qdir, "probes.tsv"), "w")
+    probes_fh.write("\t".join(probe_cols) + "\n")
+    n_probes_total, n_reasons = 0, {}
     noisy_cut = np.nanpercentile(np.concatenate([per_probe[c]["lrr_sd"] for c in C.chroms if c not in ("chrX", "chrY")]), 100 * (1 - T["probe_lrr_sd_top"]))
     seen = set()
     for c in C.chroms:
@@ -522,7 +543,7 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
         if c not in ("chrX", "chrY"):
             cand = keep_gt & (n_called >= 10) & (n_ab > 0)
             hwe[cand] = hwe_p(n_aa[cand], n_ab[cand], n_bb[cand])
-        hwe_fail = keep_gt & (hwe < T["probe_hwe_p"])
+        hwe_fail = keep_gt & (hwe < T["probe_hwe_p"]) & het_excess(n_aa, n_ab, n_bb)
         for i in range(P):
             for flag, name in ((bad[i], "lrr_median"), (noisy[i], "lrr_sd"), (lowcr[i], "call_rate"), (shift[i], "baf_shift"), (gt_low[i], "gentrain"), (cs_low[i], "cluster_sep"), (hwe_fail[i], "hwe")):
                 if flag:
@@ -532,11 +553,14 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
         maf = np.where(n_called > 0, pp["n_alt"] / np.maximum(2 * n_called, 1), np.nan)
         maf = np.minimum(maf, 1 - maf)
         for i in range(P):
-            probe_rows.append((c, int(pr.pos[i]), ids[i], int(keep[i]), int(keep_gt[i]), ",".join(reasons[i]) or NA, int(pr.par[i]), int(pr.intensity_only[i]), int(pr.snv[i]),
-                               cr[i], med[i], pp["lrr_sd"][i], pp["het_baf_median"][i], hwe[i] if c not in ("chrX", "chrY") else NA, pr.gentrain[i], pr.cluster_sep[i], maf[i], int(n_called[i])))
+            why = ",".join(reasons[i]) or NA
+            for r in why.split(","):
+                n_reasons[r] = n_reasons.get(r, 0) + 1
+            probes_fh.write("\t".join(fmt(v, 4) for v in (c, int(pr.pos[i]), ids[i], int(keep[i]), int(keep_gt[i]), why, int(pr.par[i]), int(pr.intensity_only[i]), int(pr.snv[i]),
+                                                        cr[i], med[i], pp["lrr_sd"][i], pp["het_baf_median"][i], hwe[i] if c not in ("chrX", "chrY") else NA, pr.gentrain[i], pr.cluster_sep[i], maf[i], int(n_called[i]))) + "\n")
+        n_probes_total += P
         keep_all.append(keep), keep_gt_all.append(keep_gt), maf_all.append(maf), cr_all.append(cr), hwe_all.append(hwe)
-    write_tsv(os.path.join(qdir, "probes.tsv"), ["chrom", "pos", "id", "keep", "keep_gt", "reason", "par", "intensity_only", "snv", "call_rate", "lrr_median", "lrr_sd", "het_baf_median",
-                                                 "hwe_p", "gentrain", "cluster_sep", "maf", "n_called"], probe_rows, nd=4)
+    probes_fh.close()
     het_shift = {c: per_probe[c]["het_baf_median"] for c in C.chroms}
     np.savez(os.path.join(qdir, "probes.npz"), keep=np.concatenate(keep_all), keep_gt=np.concatenate(keep_gt_all), maf=np.concatenate(maf_all), call_rate=np.concatenate(cr_all),
              hwe=np.concatenate(hwe_all), het_baf_median=np.concatenate([het_shift[c] for c in C.chroms]), n_het=np.concatenate([per_probe[c]["n_het"] for c in C.chroms]), chroms=np.array(C.chroms))
@@ -576,12 +600,12 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     write_tsv(os.path.join(qdir, "samples.tsv"), cols, rows, nd=4)
     n_pass = sum(1 for r in rows if r["pass"])
     n_hard = sum(1 for r in rows if r["hard_fail"])
-    summary = dict(samples=S, passing=n_pass, flagged=S - n_pass, hard_fail=n_hard, probes=len(probe_rows), probes_keep=int(np.concatenate(keep_all).sum()), probes_keep_gt=int(np.concatenate(keep_gt_all).sum()),
-                   reasons=_count([r[5] for r in probe_rows]), flags=_count([",".join(f) or NA for f in flags_all]), cohort=cohort, thresholds={k: dict(value=T[k], source=THRESHOLDS[k][1]) for k in THRESHOLDS},
+    summary = dict(samples=S, passing=n_pass, flagged=S - n_pass, hard_fail=n_hard, probes=n_probes_total, probes_keep=int(np.concatenate(keep_all).sum()), probes_keep_gt=int(np.concatenate(keep_gt_all).sum()),
+                   reasons=n_reasons, flags=_count([",".join(f) or NA for f in flags_all]), cohort=cohort, thresholds={k: dict(value=T[k], source=THRESHOLDS[k][1]) for k in THRESHOLDS},
                    batches=batches, use_batch=use_batch, gc=stats, y_midpoint=float(y_mid) if np.isfinite(y_mid) else None, x_reference_samples=int(ref_x.sum()), seconds=time.time() - t0)
     write_json(summary, os.path.join(qdir, "summary.json"))
     log_fn("probes: %d kept for LRR, %d for genotypes of %d; samples: %d pass, %d flagged (%d hard) of %d; LRR SD median %.3f raw -> %.3f corrected; GC correlation %.3f -> %.3f" % (
-        summary["probes_keep"], summary["probes_keep_gt"], len(probe_rows), n_pass, S - n_pass, n_hard, S, cohort["lrr_sd_raw"]["median"], cohort["lrr_sd"]["median"],
+        summary["probes_keep"], summary["probes_keep_gt"], n_probes_total, n_pass, S - n_pass, n_hard, S, cohort["lrr_sd_raw"]["median"], cohort["lrr_sd"]["median"],
         float(np.nanmedian(np.abs(gc_corr_before))), float(np.nanmedian(np.abs(gc_corr_after)))), "qc")
     try:
         from .plots import fig_qc
@@ -691,18 +715,17 @@ def baf_shift(het_median, n_het, min_shift=0.01, min_het=RECENTRE_MIN_HET):
 
 
 def recompute_hwe(out, cache, unrelated):
-    """Hardy-Weinberg over the unrelated passing samples (after the pedigree step): qc/probes.tsv and probes.npz updated (the
-    `hwe` reason and keep_gt). Returns the number of probes failing."""
-    from .util import read_tsv
+    """Hardy-Weinberg over the unrelated passing samples (after the pedigree step): qc/probes.npz updated and qc/probes.tsv
+    rewritten line by line (the `hwe` reason, hwe_p and keep_gt). Returns the number of probes failing."""
     T = THRESHOLDS["probe_hwe_p"][0]
     path = os.path.join(out, "qc", "probes.tsv")
-    rows = read_tsv(path)
     z = np.load(os.path.join(out, "qc", "probes.npz"))
     keep_gt, hwe_all = z["keep_gt"].copy(), z["hwe"].copy()
     off, n = {}, 0
     for c in cache.chroms:
         off[c] = n
         n += cache.n_probes[c]
+    fail_all = np.zeros(n, dtype=bool)
     n_fail = 0
     for c in cache.chroms:
         if c in ("chrX", "chrY"):
@@ -711,26 +734,35 @@ def recompute_hwe(out, cache, unrelated):
         n_ab = (g == 1).sum(axis=0)
         n_bb = (g == 2).sum(axis=0)
         n_aa = (g == 0).sum(axis=0)
+        del g
         n_called = n_aa + n_ab + n_bb
         sl = slice(off[c], off[c] + cache.n_probes[c])
         cand = (n_called >= 10) & (n_ab > 0)
         p = np.ones(cache.n_probes[c])
         p[cand] = hwe_p(n_aa[cand], n_ab[cand], n_bb[cand])
         hwe_all[sl] = p
-        fail = p < T
-        for i in np.flatnonzero(fail | (np.asarray([("hwe" in r["reason"]) for r in rows[sl]]))):
-            r = rows[off[c] + i]
-            reasons = [x for x in r["reason"].split(",") if x not in ("NA", "hwe", "")]
-            if fail[i]:
+        fail_all[sl] = (p < T) & het_excess(n_aa, n_ab, n_bb)
+        n_fail += int(fail_all[sl].sum())
+        release(cache.gt(c))
+    tmp = path + ".part"
+    with open(path) as src, open(tmp, "w") as dst:
+        head = src.readline()
+        cols = head.rstrip("\n").split("\t")
+        i_reason, i_hwe, i_keep_gt = cols.index("reason"), cols.index("hwe_p"), cols.index("keep_gt")
+        dst.write(head)
+        for i, line in enumerate(src):
+            f = line.rstrip("\n").split("\t")
+            reasons = [x for x in f[i_reason].split(",") if x not in ("NA", "hwe", "")]
+            if fail_all[i]:
                 reasons.append("hwe")
-            r["reason"] = ",".join(reasons) or NA
-            r["hwe_p"] = fmt_p(p[i])
-            was_only_hwe = (not fail[i]) and r["keep_gt"] == "0" and reasons == []
-            r["keep_gt"] = "0" if (fail[i] or (reasons and r["keep_gt"] == "0")) else ("1" if was_only_hwe or r["keep_gt"] == "1" else r["keep_gt"])
-            keep_gt[off[c] + i] = r["keep_gt"] == "1"
-        n_fail += int(fail.sum())
-    cols = list(rows[0].keys())
-    write_tsv(path, cols, rows)
+            f[i_reason] = ",".join(reasons) or NA
+            f[i_hwe] = fmt_p(hwe_all[i]) if f[i_hwe] != NA else NA
+            f[i_keep_gt] = "0" if (fail_all[i] or any(r not in ("intensity_only",) for r in reasons) and f[i_keep_gt] == "0") else "1"
+            if reasons and f[i_keep_gt] == "1" and any(r in ("non_snv", "intensity_only", "duplicate_position", "excluded", "lrr_median", "lrr_sd", "call_rate", "baf_shift", "gentrain", "cluster_sep") for r in reasons):
+                f[i_keep_gt] = "0"
+            keep_gt[i] = f[i_keep_gt] == "1"
+            dst.write("\t".join(f) + "\n")
+    os.replace(tmp, path)
     np.savez(os.path.join(out, "qc", "probes.npz"), keep=z["keep"], keep_gt=keep_gt, maf=z["maf"], call_rate=z["call_rate"], hwe=hwe_all, het_baf_median=z["het_baf_median"], n_het=z["n_het"], chroms=z["chroms"])
     return n_fail
 

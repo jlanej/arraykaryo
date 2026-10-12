@@ -272,10 +272,11 @@ def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.
     if len(segs) < 2:
         return segs
     typed = [type_segment(s, p, L1, L3, use_het=use_het)[0] for s in segs]
-    # 1. nothing + nothing -> one segment
+    # 1. nothing + nothing at the same level -> one segment (a sliver of an event the scan cut off, typed as nothing on its own because
+    #    it is short, must not be swallowed by the normal segment next to it: step 2 gives it back to its event)
     k = 0
     while k < len(segs) - 1:
-        if not typed[k] and not typed[k + 1]:
+        if not typed[k] and not typed[k + 1] and abs(segs[k]["lrr"] - segs[k + 1]["lrr"]) <= max(0.03, 3 * np.hypot(segs[k]["lrr_se"], segs[k + 1]["lrr_se"])):
             m = segment_evidence(pd, segs[k]["a"], segs[k + 1]["b"], sample_sd, baf_sd)
             if m is not None:
                 segs = segs[:k] + [m] + segs[k + 2:]

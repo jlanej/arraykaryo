@@ -91,7 +91,7 @@ against a band SD of 0.03-0.05 at a heterozygous call; the band deviation d fitt
 | per-probe LRR median (raw) | beyond +-0.3 | a mis-normalised probe |
 | per-probe LRR robust SD | top 1% | a noisy probe |
 | heterozygous-call BAF median | more than 0.05 from 0.5 | a shifted cluster; MoChA re-centres shifts above 0.01 |
-| Hardy-Weinberg exact test (Wigginton 2005) | p < 1e-10 | PLINK `--hwe` practice for arrays; over the passing samples here, over the unrelated passing samples after the pedigree step |
+| Hardy-Weinberg exact test (Wigginton 2005), with an excess of heterozygotes | p < 1e-10 | PLINK `--hwe` practice for arrays; over the passing samples here, over the unrelated passing samples after the pedigree step. Only an excess of heterozygotes marks a bad probe (one reading two loci); a deficit is what population structure does to a cohort of several populations (the Wahlund effect: *example*, 221,583 of 2.4 million probes fail at 1e-10 in both directions, most by deficit) and is left alone |
 | `GenTrain_Score` | < 0.6 | Illumina's GenTrain guidance |
 | `Cluster_Sep` | < 0.3 | Illumina: overlapping clusters |
 | PAR probe | kept, tagged `par` | used for the autosomal-like X only |
