@@ -75,11 +75,15 @@ def y_specific_probes(C, keep, par, has_y, no_y, min_group=5):
     return spec, "%d of %d non-PAR Y probes are Y-specific (near the male level in the samples with a Y, below -2 in those without)" % (spec.sum(), base.sum())
 
 
-def anchor(x_copies, y_copies):
-    """XY ('M') with a Y, XX ('F') without; a Y in part of the cells goes with the nearer complement."""
+def anchor(x_copies, y_copies, x_het_rel=np.nan):
+    """XY ('M') with a Y, XX ('F') without; a Y in part of the cells goes with the nearer complement; one X without
+    heterozygosity and little or no Y is read against XY too (a man whose cells lost the Y, or a 45,X: both are one X, and
+    the Y's share of cells says which)."""
     if not np.isfinite(y_copies):
         return ""
     if y_copies >= 0.5:
+        return "M"
+    if np.isfinite(x_copies) and x_copies < 1.5 and np.isfinite(x_het_rel) and x_het_rel < 0.15:
         return "M"
     if y_copies < Y_PRESENT:
         return "F"
@@ -222,7 +226,7 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
     else:
         y_copies = np.full(S, np.nan)
     # the spread of the levels within each cluster: a mosaic must stand out from it
-    anchors = np.array([anchor(float(x_copies[i]), float(y_copies[i])) for i in range(S)])
+    anchors = np.array([anchor(float(x_copies[i]), float(y_copies[i]), float(x_het_rel[i])) for i in range(S)])
     def spread(v, m):
         vv = v[m & passing & np.isfinite(v)]
         return robust_sd(vv) if vv.size >= 10 else 0.0
@@ -235,7 +239,7 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
     updates = {}
     for i, name in enumerate(C.samples):
         xc, yc = float(x_copies[i]), float(y_copies[i])
-        base = anchor(xc, yc)
+        base = anchor(xc, yc, float(x_het_rel[i]))
         comp = complement_of(xc, yc)
         exp_x = 1 if base == "M" else 2
         mosaic, f, f_lrr, f_baf, kar = "", np.nan, np.nan, np.nan, ""
@@ -270,6 +274,10 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
                     notes.append("X at %.2f copies in an XY sample: a single X lost in part of the cells is not a viable state (an artefact, or a mixture)" % xc)
             if called:
                 f = f_baf if finite(f_baf) else f_lrr
+                if base == "M" and kind == "gain" and x_het_rel[i] >= 0.7:
+                    f = f_lrr                                              # two fully heterozygous X's: the extra X is in every cell; the band formula is for a part
+                if finite(f_baf) and finite(f_lrr) and abs(f_baf - f_lrr) > 0.2:
+                    notes.append("the LRR and the BAF disagree on the cell fraction (%.2f against %.2f)" % (f_lrr, f_baf))
                 comp2 = comp if f >= p["const_f"] else ("X" * (exp_x + (1 if kind == "gain" else -1)) + ("Y" if base == "M" else ""))
                 if f >= p["const_f"]:
                     mosaic = "constitutional %s" % KARYOTYPE_NAME.get(comp, comp)
@@ -286,14 +294,20 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
             dev_y = yc - 1.0
             if dev_y <= -floor_y["M"]:
                 fy = float(min(-dev_y, 1.0))
-                if fy >= p["const_f"]:
-                    txt = "loss of Y"
+                if yc < 0.05:
+                    txt = "no Y: 45,X (in a man, the Y lost in every cell)"
+                elif fy >= p["const_f"]:
+                    txt = "loss of Y in %.0f%% of cells" % (100 * fy)
                 else:
                     txt = "mosaic loss of Y in %.0f%% of cells" % (100 * fy)
                 mosaic = (mosaic + "; " if mosaic else "") + txt
                 f = fy if not np.isfinite(f) else f
                 f_lrr = fy if not np.isfinite(f_lrr) else f_lrr
-                kar = ("mos 45,X[%.2f]/%s" % (fy, kar or "46,XY")) if fy < p["const_f"] else kar
+                if fy < p["const_f"]:
+                    kar = "mos 45,X[%.2f]/%s" % (fy, kar or "46,XY")
+                else:                                                      # the Y gone from (nearly) every cell: the complement is X
+                    comp = complement_of(xc, 0.0) if comp in ("XY", "") else comp
+                    kar = KARYOTYPE_NAME.get(comp, "%d,%s" % (44 + len(comp), comp))
                 notes.append("Y at %.2f copies against 1 (%s)" % (yc, txt))
             elif dev_y >= floor_y["M"]:
                 fy = float(min(dev_y, 2.0))
