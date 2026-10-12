@@ -17,3 +17,5 @@ repository.
 | 0.2.0 | qc (two passes, figures) | 60 x 82k | 4 | 4 s | - |
 | 0.2.0 | sex (figures for 6 samples) | 60 x 82k | 1 | 1.7 s | - |
 | 0.2.0 | pytest (19 tests, the mock built once) | - | - | 22 s | - |
+| 0.3.0 | pedigree (11,370 probes, 60 samples, the plink2 cross-check apart) | 60 x 82k | 1 | 1.3 s | - |
+| 0.3.0 | pytest (23 tests) | - | - | 29 s | - |

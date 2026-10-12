@@ -628,3 +628,52 @@ def probe_masks(out, cache):
         off[c] = slice(n, n + cache.n_probes[c])
         n += cache.n_probes[c]
     return {c: dict(keep=z["keep"][off[c]], keep_gt=z["keep_gt"][off[c]], maf=z["maf"][off[c]], het_baf_median=z["het_baf_median"][off[c]], call_rate=z["call_rate"][off[c]]) for c in cache.chroms}
+
+
+def recompute_hwe(out, cache, unrelated):
+    """Hardy-Weinberg over the unrelated passing samples (after the pedigree step): qc/probes.tsv and probes.npz updated (the
+    `hwe` reason and keep_gt). Returns the number of probes failing."""
+    from .util import read_tsv
+    T = THRESHOLDS["probe_hwe_p"][0]
+    path = os.path.join(out, "qc", "probes.tsv")
+    rows = read_tsv(path)
+    z = np.load(os.path.join(out, "qc", "probes.npz"))
+    keep_gt, hwe_all = z["keep_gt"].copy(), z["hwe"].copy()
+    off, n = {}, 0
+    for c in cache.chroms:
+        off[c] = n
+        n += cache.n_probes[c]
+    n_fail = 0
+    for c in cache.chroms:
+        if c in ("chrX", "chrY"):
+            continue
+        g = np.asarray(cache.gt(c)[unrelated])
+        n_ab = (g == 1).sum(axis=0)
+        n_bb = (g == 2).sum(axis=0)
+        n_aa = (g == 0).sum(axis=0)
+        n_called = n_aa + n_ab + n_bb
+        sl = slice(off[c], off[c] + cache.n_probes[c])
+        cand = (n_called >= 10) & (n_ab > 0)
+        p = np.ones(cache.n_probes[c])
+        p[cand] = hwe_p(n_aa[cand], n_ab[cand], n_bb[cand])
+        hwe_all[sl] = p
+        fail = p < T
+        for i in np.flatnonzero(fail | (np.asarray([("hwe" in r["reason"]) for r in rows[sl]]))):
+            r = rows[off[c] + i]
+            reasons = [x for x in r["reason"].split(",") if x not in ("NA", "hwe", "")]
+            if fail[i]:
+                reasons.append("hwe")
+            r["reason"] = ",".join(reasons) or NA
+            r["hwe_p"] = fmt_p(p[i])
+            was_only_hwe = (not fail[i]) and r["keep_gt"] == "0" and reasons == []
+            r["keep_gt"] = "0" if (fail[i] or (reasons and r["keep_gt"] == "0")) else ("1" if was_only_hwe or r["keep_gt"] == "1" else r["keep_gt"])
+            keep_gt[off[c] + i] = r["keep_gt"] == "1"
+        n_fail += int(fail.sum())
+    cols = list(rows[0].keys())
+    write_tsv(path, cols, rows)
+    np.savez(os.path.join(out, "qc", "probes.npz"), keep=z["keep"], keep_gt=keep_gt, maf=z["maf"], call_rate=z["call_rate"], hwe=hwe_all, het_baf_median=z["het_baf_median"], chroms=z["chroms"])
+    return n_fail
+
+
+def fmt_p(p):
+    return "%.3g" % p

@@ -171,6 +171,53 @@ sex called from X heterozygosity reads two X's as female)", "X in a reported mal
 reads one X as male)" - the last two because a sex inferred from X heterozygosity alone (peddy's) mislabels them. Only an
 XX/XY contradiction raises the `sex_mismatch` flag (a swap candidate); an aneuploidy is a finding.
 
+## Pedigree (`pedigree.py`)
+
+**Probes**: autosomal SNV probes with `keep_gt`, a cohort call rate of 0.98 or more and a minor allele frequency of 0.05 or
+more, thinned to one per 50 kb (*measured* on the default mock: 11,370 of 82,000; projected about 50,000 on the example).
+A distance thinning stands in for LD pruning at this density: halving it to 25 kb moves no related pair's kinship by
+more than 0.02 (tested on the mock; to be repeated on the example's known trios).
+
+**Estimator**: KING-robust kinship, the between-family estimator of Manichaikul 2010 (equation 11), as PLINK 2's
+`--make-king` implements it: phi = (2 N_AaAa - 4 N_AAaa - N_Aa(i) - N_Aa(j)) / (4 min(N_Aa(i), N_Aa(j))) + 1/2, with
+N_AaAa the probes at which both samples are heterozygous, N_AAaa the probes at which they are opposite homozygotes (IBS0)
+and N_Aa(i) sample i's heterozygous calls, all over the probes called in both. *Measured* against `plink2 --make-king-table`
+on the same probes of the mock: kinship within 0.0001 on every related pair, IBS0 identical. The simplified form
+(N_AaAa - 2 N_AAaa) / (2 min N_Aa), which some tutorials quote, differs by up to 0.03 when the two heterozygote counts differ
+(a child with a uniparental disomy has fewer). Every pair at once by matrix products of the 0/1 indicator matrices
+(heterozygous, homozygous-reference, homozygous-alternate, called), accumulated over blocks of 8,000 probes (BLAS;
+memory one block). IBS0, the share of probes at which the pair is opposite homozygous, separates parent-offspring (at the
+genotyping-error floor: the lowest IBS0 among first-degree pairs, 0.0009 on the mock) from full siblings (a quarter of the
+unrelated expectation, the mean of 2 p^2 q^2 over the probes); the cut is their midpoint.
+
+**Classes** (KING's boundaries, each a parameter): kinship above 0.354 duplicate or monozygotic; 0.177-0.354 first degree,
+split into parent-offspring and full sibling by IBS0; 0.0884-0.177 second degree; 0.0442-0.0884 third degree.
+
+**Families**: a trio is a sample with two relatives (parent-offspring class; a full-sibling- or second-degree-classed pair
+is tried too, see below) who are unrelated to each other and, where both sexes are known, of opposite sex, and whose three
+genotypes show a Mendelian-error rate at the error floor in that orientation and far above it in the other two (at most
+0.02, the others at least three times it) - the orientation test resolves who is the child without ages. The rate is taken
+per chromosome and its median used, so that one chromosome's errors do not hide a true trio: the mock's isodisomy-15 child
+reads as a second-degree relative of its father by kinship (0.159) and IBS0 (0.020), because chromosome 15 carries no
+paternal copy; the orientation test passes on the other chromosomes (0.0035), the pair is reclassified parent-offspring with a
+note, and the trio's note names chromosome 15 (0.18 errors against 0.0035 elsewhere) as a uniparental disomy, a deletion in
+the child, or a chromosome not inherited as expected - the family-aware reading phase 2 will make. A parent-offspring pair
+with no third member is a duo, oriented by the given pedigree or a sample sheet age column when available, else reported as
+an unoriented pair; full-sibling pairs and duplicate pairs are listed as families of their own kind.
+
+**The check against a given pedigree** (`pedigree/check.tsv`): per claimed parent, agrees / the claimed parent is unrelated
+(a sample swap when the parent's sex check says so, or the parent has a duplicate; else non-paternity or non-maternity, or a
+swap elsewhere) / the claimed parent is a relative of another degree; per discovered pair not in the pedigree, an undisclosed
+parent-offspring, full-sibling or second-degree pair, or an undisclosed duplicate (siblings with the same given parents
+agree); per member, a sex contradiction between the pedigree's sex and the complement found. *Measured* on the mock: the
+swap (the claimed father unrelated and XX, the true father found as an undisclosed parent-offspring pair under the swapped
+name, and the trio assembled with him), the non-paternity, the duplicate and all three recoverable trios and three duos, with
+no spurious first-degree pair. QC flags added: `duplicate` on both members of an undisclosed duplicate pair,
+`unexpected_relative` on an undisclosed first- or second-degree pair when a pedigree was given.
+
+**Hardy-Weinberg, second pass**: after the pedigree, one member of every related pair (third degree or closer) is dropped and
+the exact test recomputed over the unrelated passing samples; `qc/probes.tsv` is updated.
+
 ## References
 
 - Peiffer DA et al. (2006) High-resolution genomic profiling of chromosomal aberrations using Infinium whole-genome genotyping. Genome Res 16:1136 (LRR and BAF).

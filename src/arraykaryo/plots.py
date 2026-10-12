@@ -229,3 +229,38 @@ def fig_sex_tracks(out, C, corr, masks, row):
     return save(fig, os.path.join(fdir, "tracks_%s" % name), "X and Y tracks of %s" % name,
                 "The corrected LRR and the BAF along the X (pseudoautosomal regions shaded) and the LRR along the Y of one sample, with its X level, its Y level and its complement.",
                 [("dark grey", "LRR per probe"), ("green", "BAF at heterozygous calls"), ("light grey", "BAF at homozygous calls and no-calls"), ("orange line", "the median X level"), ("blue line", "the median Y level")])
+
+
+def fig_kinship(out, kin, ibs0, cls, p, po_cut, log_fn=None):
+    """pedigree/figures/kinship_vs_ibs0: every pair, the related ones coloured by class, the boundaries drawn."""
+    fdir = os.path.join(out, "pedigree", "figures")
+    os.makedirs(fdir, exist_ok=True)
+    kin, ibs0 = np.asarray(kin, dtype=float), np.asarray(ibs0, dtype=float)
+    cls = np.asarray(cls)
+    ok = np.isfinite(kin) & np.isfinite(ibs0)
+    fig, ax = plt.subplots(figsize=(150 * MM, 105 * MM))
+    colours = {"": PAL["baf"], "3rd": "#999999", "2nd": PAL["het"], "fs": PAL["loss"], "po": PAL["gain"], "dup": PAL["loh"]}
+    names = {"": "unrelated", "3rd": "third degree", "2nd": "second degree", "fs": "full siblings", "po": "parent-offspring", "dup": "duplicate / monozygotic"}
+    un = ok & (cls == "")
+    step = max(1, un.sum() // 50000)
+    ax.scatter(ibs0[un][::step], kin[un][::step], s=3, c=colours[""], lw=0, rasterized=True, label="unrelated (%d pairs)" % un.sum())
+    for c in ("3rd", "2nd", "fs", "po", "dup"):
+        m = ok & (cls == c)
+        if m.any():
+            ax.scatter(ibs0[m], kin[m], s=14, c=colours[c], lw=0.3, edgecolor="white", label="%s (%d)" % (names[c], m.sum()), zorder=3)
+    for v, lab in ((p["dup"], "duplicate"), (p["first"], "first degree"), (p["second"], "second degree"), (p["third"], "third degree")):
+        ax.axhline(v, color=PAL["ref"], lw=0.6, ls=":")
+        ax.text(ax.get_xlim()[1] if False else np.nanmax(ibs0[ok]) * 1.02, v, lab, fontsize=6, va="bottom", ha="right", color=PAL["ref"])
+    ax.axvline(po_cut, color=PAL["ref"], lw=0.6, ls="--")
+    ax.text(po_cut, p["dup"] + 0.02, "parent-offspring | full siblings", fontsize=6, ha="left", va="bottom", color=PAL["ref"])
+    ax.set_xlabel("IBS0: share of probes at which the pair is opposite homozygous")
+    ax.set_ylabel("KING-robust kinship")
+    ax.set_ylim(min(-0.1, np.nanmin(kin[ok]) - 0.02), 0.56)
+    ax.set_title("Relatedness of every pair of samples")
+    ax.legend(frameon=False, loc="upper right", markerscale=1.5)
+    pth = save(fig, os.path.join(fdir, "kinship_vs_ibs0"), "Kinship against IBS0",
+               "Every pair of samples: the KING-robust kinship against the share of probes at which the two are opposite homozygotes (IBS0). Dotted lines are the class boundaries (0.354 duplicate or monozygotic; 0.177 first degree; 0.0884 second; 0.0442 third); the dashed line splits first-degree pairs into parent-offspring (IBS0 at the genotyping-error floor) and full siblings.",
+               [(names[c], colours[c]) for c in ("", "3rd", "2nd", "fs", "po", "dup")])
+    if log_fn:
+        log_fn("figure: " + os.path.relpath(pth, out), "pedigree")
+    return pth

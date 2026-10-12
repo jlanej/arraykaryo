@@ -52,3 +52,20 @@ failure, an X heterozygosity that an XY sample should not have).
 complement and by check. `figures/x_vs_y`: the X level against the Y level, coloured by X heterozygosity, every sample not
 plainly XX or XY labelled. `figures/tracks_<sample>`: the X (LRR, BAF) and Y (LRR) tracks of every sample not plainly XX or
 XY.
+
+## DIR/pedigree/ (`arraykaryo pedigree`)
+
+`relatedness.tsv`: every pair of third degree or closer - sample_a, sample_b, n_probes (called in both), kinship (KING-robust),
+ibs0 (share of opposite homozygotes), hethet (count), class (duplicate or monozygotic, parent-offspring, full sibling, second
+degree, third degree), note (a QC failure; a reclassification by the orientation test). `kinship.npz`: the full matrices.
+
+`families.tsv`: family, kind (trio, duo, parent-offspring pair unoriented, full siblings, duplicate or monozygotic twins),
+members, kid, dad, mom, other, kid_sex, mendelian_error_rate (the median over chromosomes in the trio's orientation),
+mendelian_error_rate_genome, mendelian_error_rate_other_orientations (the best of the other two), note (a chromosome whose
+errors stand out; how a duo was oriented).
+
+`pedigree.inferred.tsv`: the trios and duos in the house form (`#kid dad mom kid_sex dad_sex mom_sex`, sexes from the sex
+step). `check.tsv` (when `--pedigree` was given): kid, relative, claimed, found, kinship, status (agrees; claimed father/mother
+unrelated; claimed parent is a ... relative; undisclosed ... pair; undisclosed duplicate; sex contradiction; not in the
+export), note (what a disagreement means). `summary.json`: counts by class and family kind, the IBS0 floor and the
+parent-offspring/full-sibling cut, the unrelated passing samples, the HWE failures. `figures/kinship_vs_ibs0`: every pair.

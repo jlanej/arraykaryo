@@ -20,7 +20,6 @@ from . import __version__
 from .util import log
 
 TODO = {
-    "pedigree": "relatedness from the genotypes and the pedigree it implies, against any pedigree given (PROMPT.md, section 4.4)",
     "events": "near-chromosomal gains, losses, copy-neutral LOH and runs of homozygosity, mosaic or not (PROMPT.md, section 4.5)",
     "report": "the cohort report and the per-sample pages (PROMPT.md, section 4.6)",
     "run": "extract, qc, sex, pedigree, events and report in one go (PROMPT.md, section 4.8)",
@@ -79,6 +78,16 @@ def cmd_sex(a):
     return 0
 
 
+def cmd_pedigree(a):
+    from .pedigree import run_pedigree
+    from .util import is_done
+    if is_done(a.out, "pedigree") and not a.redo:
+        log("pedigree is done (--redo to repeat)", "pedigree")
+        return 0
+    run_pedigree(a.out, cache_dir=cache_dir(a), pedigree=a.pedigree, sample_sheet=a.sample_sheet, threads=a.threads)
+    return 0
+
+
 def cmd_todo(a):
     sys.exit("arraykaryo %s is not implemented yet: %s" % (a.cmd, TODO[a.cmd]))
 
@@ -133,6 +142,11 @@ def build_parser():
     x = sub.add_parser("sex", help="the sex-chromosome complement per sample, mosaics included, against the reported sex; sex/ tables and figures")
     add_common(x)
     x.set_defaults(func=cmd_sex)
+    pd = sub.add_parser("pedigree", help="relatedness from the genotypes (KING-robust kinship, IBS0), the families it implies, the check against a given pedigree")
+    add_common(pd)
+    pd.add_argument("--pedigree", default="", help="a pedigree to check: the house form (#kid dad mom kid_sex dad_sex mom_sex), a PLINK .fam, or any table naming the ids")
+    pd.add_argument("--sample-sheet", default="", help="the sample sheet (an age column orients duos)")
+    pd.set_defaults(func=cmd_pedigree)
     for name, what in TODO.items():
         t = sub.add_parser(name, help="(not yet implemented) " + what)
         add_common(t, bcf=(name == "run"))
