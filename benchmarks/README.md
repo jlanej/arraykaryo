@@ -28,3 +28,7 @@ repository.
 | 0.4.0 | pytest (28 tests) | - | - | 47 s | - |
 | 0.5.0 | run (extract to report, figures for 22 samples, 22 sample pages) | 60 x 82k | 4 | 17 s | 0.28 GB |
 | 0.5.0 | pytest (30 tests, the end-to-end run included) | - | - | 65 s | - |
+| 0.5.2 | extract (route cyvcf2) | example: 2,141 x 2.42M, 24 chromosomes | 8 | 390 s | 1.46 GB (the cache 35 GB) |
+| 0.5.2 | qc (two passes, figures) | example | 8 | 373 s | 4.1 GB (the probe table was held in memory; streamed from 0.5.2) |
+| 0.5.2 | sex (figures for 51 samples) | example | 1 | about 90 s | - |
+| 0.5.2 | pedigree (48,784 probes, 331 trios, the HWE screen) | example | 1 | 134 s | 2.6 GB |
