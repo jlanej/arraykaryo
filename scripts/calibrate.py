@@ -21,13 +21,13 @@ from arraykaryo.util import read_tsv, write_tsv  # noqa: E402
 FRACTIONS = [0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.0]
 SIZES_MB = [2, 5, 10, 25, "arm", "whole"]
 KINDS = ["gain", "loss", "loh"]
-CONTIGS = "chr1,chr7,chr11,chr12,chr15,chr21"
+CONTIGS = "chr1,chr2,chr3,chr7,chr11,chr12,chr15,chr21"      # eight chromosomes (1.1 Gb): no planted event covers more than a tenth of the genome
 
 
 def grid(G):
     """Planted events: every (kind, f, size) on a chromosome chosen to fit, one per sample."""
     out = []
-    spots = {"chr1": (20_000_000, 115_000_000), "chr7": (70_000_000, 150_000_000), "chr11": (60_000_000, 130_000_000), "chr12": (40_000_000, 125_000_000), "chr15": (25_000_000, 95_000_000)}
+    spots = {"chr1": (20_000_000, 115_000_000), "chr2": (20_000_000, 90_000_000), "chr3": (100_000_000, 190_000_000), "chr7": (70_000_000, 150_000_000), "chr11": (60_000_000, 130_000_000), "chr12": (40_000_000, 125_000_000), "chr15": (25_000_000, 95_000_000)}
     k = 0
     for kind in KINDS:
         for f in FRACTIONS:
@@ -42,7 +42,7 @@ def grid(G):
                     out.append(dict(chrom=chrom, start=G.p_end[chrom] + 1, end=None, f=f, kind=kind, cls="q", size=size))
                 else:
                     a = spots[chrom][0] + (k * 7_000_003) % (spots[chrom][1] - spots[chrom][0] - size * 1_000_000)
-                    out.append(dict(chrom=chrom, start=a, end=a + size * 1_000_000, f=f, kind=kind, cls="stretch", size=size))
+                    out.append(dict(chrom=chrom, start=a, end=a + int(size * 1_050_000), f=f, kind=kind, cls="stretch", size=size))      # 5% over the nominal size: a planted span between its first and last probe is a little shorter
     return out
 
 
@@ -94,7 +94,7 @@ def main():
         spec = {}
         for t in truth["events"]:
             for x in planted:
-                if x["chrom"] == t["chrom"] and x["kind"] == t["type"] and abs(x["f"] - t["f"]) < 1e-6 and abs(x["start"] - t["start"]) < 3_000_000:
+                if x["chrom"] == t["chrom"] and x["kind"] == t["type"] and abs(x["f"] - t["f"]) < 1e-6 and (abs(x["start"] - t["start"]) < 3_000_000 or (x["start"] == 1 and x["end"] is None and t["class"] == "whole")):
                     spec[t["sample"]] = x
         for s, t in truth_by.items():
             x = spec.get(s, {})

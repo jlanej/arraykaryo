@@ -41,13 +41,17 @@ def test_sample_qc_flags_the_planted_failures_and_nothing_else(qc_out, truth):
 
 
 def test_gc_wave_correction_removes_the_wave(qc_out, truth):
-    rows = read_tsv(os.path.join(qc_out, "qc", "samples.tsv"))
-    after = np.array([abs(float(r["gc_corr_after"])) for r in rows])
-    before = np.array([abs(float(r["gc_corr_before"])) for r in rows])
+    """On the null samples (no event: an event on a GC-rich chromosome is a real correlation, not a wave) the correlation of the
+    corrected LRR with the 1-Mb GC falls under 0.05; on the planted strong waves it falls by an order of magnitude."""
+    rows = {r["sample"]: r for r in read_tsv(os.path.join(qc_out, "qc", "samples.tsv"))}
+    nulls = [rows[s] for s in truth["null_samples"]]
+    after = np.array([abs(float(r["gc_corr_after"])) for r in nulls])
+    before = np.array([abs(float(r["gc_corr_before"])) for r in nulls])
     assert after.max() < 0.05 and np.median(before) > np.median(after)
     by = {s["sample"]: s for s in truth["samples"]}
-    strong = [r for r in rows if "wave" in r["flags"]]
+    strong = [r for r in rows.values() if "wave" in r["flags"]]
     assert all(abs(by[r["sample"]]["wave2"]) >= 0.05 for r in strong)       # only the planted strong waves are flagged
+    assert all(abs(float(r["gc_corr_after"])) < 0.1 * abs(float(r["gc_corr_before"])) for r in strong)
 
 
 def test_probe_qc_flags_the_planted_probes(qc_out, truth):

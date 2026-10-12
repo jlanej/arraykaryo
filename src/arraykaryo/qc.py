@@ -113,11 +113,14 @@ def pass1_chrom(args):
     gc_z, w_z = gc_covariates(C, chrom, stats)
     X = design(gc_z, w_z)
     auto = chrom not in ("chrX", "chrY")
+    p_end = C.genome.p_end.get(chrom, 0)
+    arm_of = (pr.pos > p_end).astype(np.int8)                                   # 0 the short arm, 1 the long: the GC fit is on within-arm deviations
+    acc = {k: dict(n=0, sx=np.zeros(4), sy=np.zeros(S), sxx=np.zeros((4, 4)), sxy=np.zeros((4, S))) for k in (0, 1)}
     out = dict(chrom=chrom, lrr_median=np.full(P, np.nan), lrr_sd=np.full(P, np.nan), call_rate=np.full(P, np.nan), het_baf_median=np.full(P, np.nan), n_called=np.zeros(P, np.int32),
                n_het=np.zeros(P, np.int32), n_alt=np.zeros(P, np.int32),
                s_called=np.zeros(S, np.int64), s_total=np.zeros(S, np.int64), s_het=np.zeros(S, np.int64), s_lrr_n=np.zeros(S, np.int64), s_lrr_sum=np.zeros(S), s_lrr_sq=np.zeros(S),
-               s_hetbaf_n=np.zeros(S, np.int64), s_hetbaf_sq=np.zeros(S), s_hom_n=np.zeros(S, np.int64), s_drift=np.zeros(S, np.int64),
-               xtx=np.zeros((5, 5)), xty=np.zeros((5, S)), s_wy=np.zeros(S), s_w2=0.0, s_wn=0,
+               s_hetbaf_n=np.zeros(S, np.int64), s_hetbaf_sq=np.zeros(S), s_hom_n=np.zeros(S, np.int64), s_drift=np.zeros(S, np.int64), s_hist=np.zeros((S, 500), np.int64),
+               arms=[], s_wy=np.zeros(S), s_w2=0.0, s_wn=0,
                y_lrr_sum=np.zeros(S), y_lrr_n=np.zeros(S, np.int64), y_called=np.zeros(S, np.int64), y_total=np.zeros(S, np.int64),
                win_med=np.zeros((0, S)), win_gc=np.zeros(0), auto=auto)
     if auto:                                                                 # PennCNV's 1-Mb windows for the waviness factor
@@ -169,15 +172,28 @@ def pass1_chrom(args):
             dev = np.where(hu, np.clip(B, 0, 1) - 0.5, 0.0)
             out["s_hetbaf_n"] += hu.sum(axis=1)
             out["s_hetbaf_sq"] += (dev * dev).sum(axis=1)                 # per chromosome: the median over chromosomes is the sample's BAF SD
+            bins = np.minimum((np.abs(dev) * 1000).astype(np.int64), 499)   # the folded values histogrammed at 0.001: the robust band SD comes from their median
+            for j in range(S):
+                hj = bins[j][hu[j]]
+                if hj.size:
+                    out["s_hist"][j] += np.bincount(hj, minlength=500)
             hom = (g == 0) | (g == 2)
             homu = hom & use & np.isfinite(B)
             out["s_hom_n"] += homu.sum(axis=1)
             out["s_drift"] += (homu & (((B > 0.2) & (B < 0.25)) | ((B > 0.75) & (B < 0.8)))).sum(axis=1)
-            # the GC regression: y = clipped LRR, NaN -> 0; X shared by every sample
+            # the GC regression on within-arm deviations: y = clipped LRR, NaN -> 0; the four slope terms of X, shared by every sample;
+            # the arm sums let the within-arm products be formed afterwards (sum (x - xbar)(y - ybar) = sum xy - n xbar ybar)
             y = np.where(finiteL, np.clip(L, -1.0, 1.0), 0.0)
-            Xb = X[a:b]
-            out["xtx"] += Xb.T @ Xb
-            out["xty"] += Xb.T @ y.T
+            Xb = X[a:b, 1:]
+            for arm in (0, 1):
+                m = arm_of[a:b] == arm
+                if m.any():
+                    A = acc[arm]
+                    A["n"] += int(m.sum())
+                    A["sx"] += Xb[m].sum(axis=0)
+                    A["sy"] += y[:, m].sum(axis=1)
+                    A["sxx"] += Xb[m].T @ Xb[m]
+                    A["sxy"] += Xb[m].T @ y[:, m].T
             wz = np.nan_to_num(w_z[a:b])
             out["s_wy"] += (y * wz[None, :]).sum(axis=1)
             out["s_w2"] += float((wz * wz).sum())
@@ -192,20 +208,31 @@ def pass1_chrom(args):
         if (a // BLOCK) % 8 == 7:
             for mm in (gt, lrr, baf):
                 release(mm)
+    if auto:
+        for arm in (0, 1):
+            A = acc[arm]
+            if A["n"] > 10:
+                xbar, ybar = A["sx"] / A["n"], A["sy"] / A["n"]
+                out["arms"].append((A["sxx"] - A["n"] * np.outer(xbar, xbar), A["sxy"] - A["n"] * np.outer(xbar, ybar)))
     return out
 
 
 def combine_pass1(parts, cache):
     S = cache.n_samples
     s = dict(called=np.zeros(S, np.int64), total=np.zeros(S, np.int64), het=np.zeros(S, np.int64), lrr_n=np.zeros(S, np.int64), lrr_sum=np.zeros(S), lrr_sq=np.zeros(S),
-             hetbaf_n=np.zeros(S, np.int64), hetbaf_sq=np.zeros(S), hom_n=np.zeros(S, np.int64), drift=np.zeros(S, np.int64), xtx=np.zeros((5, 5)), xty=np.zeros((5, S)),
+             hetbaf_n=np.zeros(S, np.int64), hetbaf_sq=np.zeros(S), hom_n=np.zeros(S, np.int64), drift=np.zeros(S, np.int64), hist=np.zeros((S, 500), np.int64), xtx=np.zeros((4, 4)), xty=np.zeros((4, S)),
              wy=np.zeros(S), w2=0.0, wn=0, y_lrr_sum=np.zeros(S), y_lrr_n=np.zeros(S, np.int64), y_called=np.zeros(S, np.int64), y_total=np.zeros(S, np.int64))
     per_probe = {}
     baf_sd_chrom, win_med, win_gc = [], [], []
     for p in parts:
         per_probe[p["chrom"]] = {k: p[k] for k in ("lrr_median", "lrr_sd", "call_rate", "het_baf_median", "n_called", "n_het", "n_alt")}
         for k in s:
+            if k in ("xtx", "xty"):
+                continue
             s[k] = s[k] + p["s_" + k] if ("s_" + k) in p else s[k] + p[k]
+        for xtx_arm, xty_arm in p["arms"]:
+            s["xtx"] += xtx_arm
+            s["xty"] += xty_arm
         if p["auto"] and p["s_hetbaf_n"].max() > 0:
             baf_sd_chrom.append(np.where(p["s_hetbaf_n"] >= 20, np.sqrt(p["s_hetbaf_sq"] / np.maximum(p["s_hetbaf_n"], 1)), np.nan))
         if p["win_med"].shape[0]:
@@ -213,6 +240,11 @@ def combine_pass1(parts, cache):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         s["baf_sd"] = np.nanmedian(np.stack(baf_sd_chrom), axis=0) if baf_sd_chrom else np.full(S, np.nan)
+        # the robust band SD: the median of |BAF - 0.5| at heterozygous calls over 0.6745 (a half-normal's median), immune to mis-called genotypes
+        cum = np.cumsum(s["hist"], axis=1)
+        tot = cum[:, -1]
+        med_bin = np.argmax(cum >= (tot / 2.0)[:, None], axis=1)
+        s["baf_sd_robust"] = np.where(tot > 50, (med_bin + 0.5) / 1000.0 / 0.6745, np.nan)
         if win_med:
             W, G = np.concatenate(win_med), np.concatenate(win_gc)               # windows x S, windows
             yi = W - np.nanmedian(W, axis=0)[None, :]
@@ -240,7 +272,7 @@ def pass2_chrom(args):
     auto = chrom not in ("chrX", "chrY")
     ref_mask = passing if auto else (ref_samples_x if chrom == "chrX" else np.zeros(S, bool))
     out = dict(chrom=chrom, ref=np.full(P, np.nan), ref_batch=np.full((n_batches, P), np.nan), s_n=np.zeros(S, np.int64), s_sum=np.zeros(S), s_sq=np.zeros(S), s_wy=np.zeros(S), s_w2=0.0,
-               s_absdiff=np.zeros(S), s_absn=np.zeros(S, np.int64))
+               s_absdiff=np.zeros(S), s_absn=np.zeros(S, np.int64), s_sample=[])
     for a in range(0, P, BLOCK):
         b = min(a + BLOCK, P)
         L = np.asarray(lrr[:, a:b], dtype=np.float64)
@@ -270,8 +302,10 @@ def pass2_chrom(args):
             d = np.abs(np.diff(v, axis=1))
             out["s_absdiff"] += d.sum(axis=1)
             out["s_absn"] += d.shape[1]
+            out["s_sample"].append(np.where(ok, Lr, np.nan)[:, ::97].astype(np.float32))      # every 97th probe: the per-sample median offset comes from these
         if (a // BLOCK) % 8 == 7:
             release(lrr)
+    out["s_sample"] = np.concatenate(out["s_sample"], axis=1) if out["s_sample"] else np.zeros((S, 0), np.float32)
     return out
 
 
@@ -287,6 +321,7 @@ class Correction:
         self.ref = {str(c): z["ref_" + str(c)] for c in z["chroms"]}
         self.ref_batch = {str(c): z["refb_" + str(c)] for c in z["chroms"]}
         self.use_batch = bool(z["use_batch"])
+        self.offset = z["offset"] if "offset" in z.files else np.zeros(self.coef.shape[1])
         self._cov = {}
 
     def covariates(self, cache, chrom):
@@ -314,6 +349,7 @@ class Correction:
                     L[j] -= rr.astype(np.float32)
             else:
                 L -= np.where(np.isfinite(r), r, 0.0).astype(np.float32)[None, :]
+            L -= self.offset[idx].astype(np.float32)[:, None]
         return L
 
 
@@ -381,9 +417,9 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     jobs = [dict(cache=cache_dir, chrom=c, gc_stats=stats) for c in C.chroms]
     parts = _pool(pass1_chrom, jobs, threads)
     s, per_probe = combine_pass1(parts, C)
-    # the GC fit per sample
-    xtx = s["xtx"] + 1e-9 * np.eye(5)
-    coef = np.linalg.solve(xtx, s["xty"])                                 # 5 x S
+    # the GC fit per sample: the four slopes on within-arm deviations (no intercept: the per-sample median offset centres the result)
+    xtx = s["xtx"] + 1e-9 * np.eye(4)
+    coef = np.vstack([np.zeros((1, S)), np.linalg.solve(xtx, s["xty"])])      # 5 x S, the intercept row 0
     wf = s["wf"]
     # the per-sample raw metrics
     call_rate = s["called"] / np.maximum(s["total"], 1)
@@ -391,6 +427,7 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     lrr_mean = s["lrr_sum"] / np.maximum(s["lrr_n"], 1)
     lrr_sd_raw = np.sqrt(np.maximum(s["lrr_sq"] / np.maximum(s["lrr_n"], 1) - lrr_mean ** 2, 0))
     baf_sd = s["baf_sd"]
+    baf_sd_robust = s["baf_sd_robust"]
     drift = s["drift"] / np.maximum(s["hom_n"], 1)
     y_lrr = np.where(s["y_lrr_n"] > 0, s["y_lrr_sum"] / np.maximum(s["y_lrr_n"], 1), np.nan)
     y_call = s["y_called"] / np.maximum(s["y_total"], 1)
@@ -428,10 +465,17 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     absd = sum(p["s_absdiff"] for p in parts2) / np.maximum(sum(p["s_absn"] for p in parts2), 1)
     lrr_mean_c = sum2 / np.maximum(n2, 1)
     lrr_sd = np.sqrt(np.maximum(sq2 / np.maximum(n2, 1) - lrr_mean_c ** 2, 0))
+    # the per-sample offset: the median corrected autosomal LRR, subtracted so that two copies sit at 0 in every sample whatever share
+    # of its genome an event covers (the regression's intercept is a mean, which a large event pulls)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        sub = np.concatenate([p["s_sample"] for p in parts2 if p["s_sample"].shape[1]], axis=1) if any(p["s_sample"].shape[1] for p in parts2) else np.zeros((S, 0))
+        offset = np.nanmedian(sub, axis=1) if sub.shape[1] else np.zeros(S)
+    offset = np.where(np.isfinite(offset), offset, 0.0)
     gc_corr_after = (wy2 / max(s["wn"], 1)) / np.maximum(lrr_sd * np.sqrt(w22 / max(s["wn"], 1)), 1e-9)
     lrr_sd_diff = absd / np.sqrt(2.0) * np.sqrt(np.pi / 2.0)             # the noise SD from first differences (robust to events)
     np.savez(os.path.join(qdir, "correction.npz"), coef=coef, batch_idx=batch_idx, use_batch=use_batch, gc_mean=stats["gc_mean"], gc_sd=stats["gc_sd"], w_mean=stats["w_mean"], w_sd=stats["w_sd"],
-             chroms=np.array(C.chroms), batches=np.array(batches), **{"ref_" + p["chrom"]: p["ref"] for p in parts2}, **{"refb_" + p["chrom"]: p["ref_batch"] for p in parts2})
+             offset=offset, chroms=np.array(C.chroms), batches=np.array(batches), **{"ref_" + p["chrom"]: p["ref"] for p in parts2}, **{"refb_" + p["chrom"]: p["ref_batch"] for p in parts2})
     # probe QC
     probe_rows, keep_all, keep_gt_all, maf_all, cr_all, hwe_all = [], [], [], [], [], []
     noisy_cut = np.nanpercentile(np.concatenate([per_probe[c]["lrr_sd"] for c in C.chroms if c not in ("chrX", "chrY")]), 100 * (1 - T["probe_lrr_sd_top"]))
@@ -495,7 +539,7 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
                                                  "hwe_p", "gentrain", "cluster_sep", "maf", "n_called"], probe_rows, nd=4)
     het_shift = {c: per_probe[c]["het_baf_median"] for c in C.chroms}
     np.savez(os.path.join(qdir, "probes.npz"), keep=np.concatenate(keep_all), keep_gt=np.concatenate(keep_gt_all), maf=np.concatenate(maf_all), call_rate=np.concatenate(cr_all),
-             hwe=np.concatenate(hwe_all), het_baf_median=np.concatenate([het_shift[c] for c in C.chroms]), chroms=np.array(C.chroms))
+             hwe=np.concatenate(hwe_all), het_baf_median=np.concatenate([het_shift[c] for c in C.chroms]), n_het=np.concatenate([per_probe[c]["n_het"] for c in C.chroms]), chroms=np.array(C.chroms))
     # sample QC verdicts
     rows = []
     cohort = {}
@@ -521,13 +565,13 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
         if abs(lrr_mean[i]) > T["sample_lrr_mean"]:
             fl.append("lrr_mean")
         flags_all.append(fl)
-        rows.append(dict(sample=name, reported_sex=reported[i] or NA, batch=batch[i] or NA, call_rate=call_rate[i], het_rate=het_rate[i], lrr_mean=lrr_mean[i], lrr_sd_raw=lrr_sd_raw[i],
-                         lrr_sd=lrr_sd[i], lrr_sd_diff=lrr_sd_diff[i], baf_sd=baf_sd[i], baf_drift=drift[i], wf=wf[i], gc_corr_before=gc_corr_before[i], gc_corr_after=gc_corr_after[i],
+        rows.append(dict(sample=name, reported_sex=reported[i] or NA, batch=batch[i] or NA, call_rate=call_rate[i], het_rate=het_rate[i], lrr_mean=lrr_mean[i], lrr_offset=offset[i], lrr_sd_raw=lrr_sd_raw[i],
+                         lrr_sd=lrr_sd[i], lrr_sd_diff=lrr_sd_diff[i], baf_sd=baf_sd[i], baf_sd_robust=baf_sd_robust[i], baf_drift=drift[i], wf=wf[i], gc_corr_before=gc_corr_before[i], gc_corr_after=gc_corr_after[i],
                          y_lrr_raw=y_lrr[i], y_call_rate=y_call[i], **{"pass": int(not fl), "hard_fail": int(hard), "flags": ",".join(fl) or NA}))
     for k in ("call_rate", "het_rate", "lrr_mean", "lrr_sd_raw", "lrr_sd", "baf_sd", "baf_drift", "wf", "gc_corr_before", "gc_corr_after"):
         v = np.array([r[k] for r in rows], dtype=float)
         cohort[k] = dict(median=float(np.nanmedian(v)), robust_sd=robust_sd(v))
-    cols = ["sample", "reported_sex", "batch", "call_rate", "het_rate", "lrr_mean", "lrr_sd_raw", "lrr_sd", "lrr_sd_diff", "baf_sd", "baf_drift", "wf", "gc_corr_before", "gc_corr_after",
+    cols = ["sample", "reported_sex", "batch", "call_rate", "het_rate", "lrr_mean", "lrr_offset", "lrr_sd_raw", "lrr_sd", "lrr_sd_diff", "baf_sd", "baf_sd_robust", "baf_drift", "wf", "gc_corr_before", "gc_corr_after",
             "y_lrr_raw", "y_call_rate", "pass", "hard_fail", "flags"]
     write_tsv(os.path.join(qdir, "samples.tsv"), cols, rows, nd=4)
     n_pass = sum(1 for r in rows if r["pass"])
@@ -632,7 +676,18 @@ def probe_masks(out, cache):
     for c in cache.chroms:
         off[c] = slice(n, n + cache.n_probes[c])
         n += cache.n_probes[c]
-    return {c: dict(keep=z["keep"][off[c]], keep_gt=z["keep_gt"][off[c]], maf=z["maf"][off[c]], het_baf_median=z["het_baf_median"][off[c]], call_rate=z["call_rate"][off[c]]) for c in cache.chroms}
+    n_het = z["n_het"] if "n_het" in z.files else np.full(z["keep"].size, 10 ** 6)
+    return {c: dict(keep=z["keep"][off[c]], keep_gt=z["keep_gt"][off[c]], maf=z["maf"][off[c]], het_baf_median=z["het_baf_median"][off[c]], call_rate=z["call_rate"][off[c]], n_het=n_het[off[c]],
+                    baf_shift=baf_shift(z["het_baf_median"][off[c]], n_het[off[c]])) for c in cache.chroms}
+
+
+RECENTRE_MIN_HET = 30
+
+
+def baf_shift(het_median, n_het, min_shift=0.01, min_het=RECENTRE_MIN_HET):
+    """The per-probe re-centring of heterozygous-call BAF (MoChA's cluster adjustment): the cohort's median at the probe minus 0.5
+    when it shifts by more than 0.01 and at least 30 heterozygous calls support it (the median of fewer calls is noise)."""
+    return np.where(np.isfinite(het_median) & (np.abs(het_median - 0.5) > min_shift) & (n_het >= min_het), het_median - 0.5, 0.0).astype(np.float32)
 
 
 def recompute_hwe(out, cache, unrelated):
@@ -676,7 +731,7 @@ def recompute_hwe(out, cache, unrelated):
         n_fail += int(fail.sum())
     cols = list(rows[0].keys())
     write_tsv(path, cols, rows)
-    np.savez(os.path.join(out, "qc", "probes.npz"), keep=z["keep"], keep_gt=keep_gt, maf=z["maf"], call_rate=z["call_rate"], hwe=hwe_all, het_baf_median=z["het_baf_median"], chroms=z["chroms"])
+    np.savez(os.path.join(out, "qc", "probes.npz"), keep=z["keep"], keep_gt=keep_gt, maf=z["maf"], call_rate=z["call_rate"], hwe=hwe_all, het_baf_median=z["het_baf_median"], n_het=z["n_het"], chroms=z["chroms"])
     return n_fail
 
 

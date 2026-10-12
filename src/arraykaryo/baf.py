@@ -5,6 +5,7 @@ fraction. The cell fraction follows from d: gain f = 4d / (1 - 2d), loss f = 4d 
 heterozygosity f = 2d (the band positions (1 + f) / (2 + f), 1 / (2 - f) and (1 + f) / 2 solved for f)."""
 import numpy as np
 
+EPS = 0.02           # the outlier share: a uniform component on [0, 0.5] (density 2) bounds what one mis-called genotype can do to a fit
 D_GRID = np.linspace(0.0, 0.49, 246)       # step 0.002 in d: 0.008 in f for a gain, 0.004 for a copy-neutral LOH
 
 
@@ -13,18 +14,19 @@ def fold(baf):
     return np.abs(np.clip(baf, 0.0, 1.0) - 0.5)
 
 
-def loglik_grid(u, sigma, grid=D_GRID):
-    """Log-likelihood of the folded values u (finite) under 0.5 N(u; d, sigma) + 0.5 N(u; -d, sigma) for every d of the grid
-    (a folded normal: u >= 0 carries both signs). Returns an array over the grid (the constant sqrt(2 pi) dropped; the
-    -n log sigma term kept so that fits with different sigma compare)."""
+def loglik_grid(u, sigma, grid=D_GRID, eps=EPS):
+    """Log-likelihood of the folded values u (finite) under (1 - eps) [0.5 N(u; d, sigma) + 0.5 N(u; -d, sigma)] + eps x 2 (a
+    uniform outlier component on [0, 0.5]: a mis-called genotype with a BAF near 0 or 1 cannot drag the fit) for every d of
+    the grid. The normal density is complete (so that the outlier component compares), summed over the values."""
     u = np.asarray(u, dtype=np.float64)
     if u.size == 0:
         return np.zeros(grid.size)
     s2 = 2.0 * sigma * sigma
+    norm = 1.0 / (sigma * np.sqrt(2.0 * np.pi))
     a = -((u[:, None] - grid[None, :]) ** 2) / s2
     b = -((u[:, None] + grid[None, :]) ** 2) / s2
-    m = np.maximum(a, b)
-    return (m + np.log(np.exp(a - m) + np.exp(b - m))).sum(axis=0) - u.size * np.log(sigma)
+    dens = (1.0 - eps) * 0.5 * norm * (np.exp(a) + np.exp(b)) + eps * 2.0
+    return np.log(dens).sum(axis=0)
 
 
 MAX_FIT = 4000      # heterozygous calls used by a fit (an evenly spaced subsample beyond: the SE of d at 4,000 calls is under 0.001)
@@ -63,20 +65,39 @@ def fit_d(baf, sigma=None, grid=D_GRID):
     return float(fine[k]), float(sigma), float((ll[k] - ll[0]) * scale)
 
 
-def d_em_windows(u, valid, sigma, iters=12):
+def d_em_windows(u, valid, sigma, iters=12, eps=EPS):
     """d per window for many windows at once by EM with a known band SD: u (windows x width) folded values, valid the mask of
     heterozygous calls; sigma per window (broadcast). The E-step gives each value's probability of the upper band,
-    r = sigmoid(2 d u / sigma^2); the M-step d = mean((2r - 1) u). Returns (d, n) with d NaN where fewer than 4 calls."""
+    r = sigmoid(2 d u / sigma^2); the M-step d = mean((2r - 1) u). Returns (d, n, llr): d NaN where fewer than 4 calls; llr the
+    window's log-likelihood ratio of the fitted d against d = 0 (the noise-aware strength of the split: at d = 0 twice the
+    ratio is a half-chi-square with one degree of freedom, so sqrt(2 llr) is a standardised track)."""
     u = np.where(valid, u, 0.0)
     n = valid.sum(axis=1)
     sig2 = np.broadcast_to(np.asarray(sigma, dtype=np.float64)[..., None] if np.ndim(sigma) else sigma, u.shape) ** 2 if np.ndim(sigma) else sigma ** 2
+    sig = np.sqrt(sig2)
+    norm = 1.0 / (sig * np.sqrt(2.0 * np.pi))
     d = np.sqrt(np.maximum((u * u).sum(axis=1) / np.maximum(n, 1) - (sig2[:, 0] if np.ndim(sig2) else sig2), 0.0))      # the moment start
     for _ in range(iters):
-        z = 2.0 * d[:, None] * u / sig2
-        r = 1.0 / (1.0 + np.exp(-np.clip(z, -50, 50)))
-        d = np.where(n > 0, ((2.0 * r - 1.0) * u * valid).sum(axis=1) / np.maximum(n, 1), 0.0)
+        dd = d[:, None]
+        pa = np.exp(-((u - dd) ** 2) / (2.0 * sig2)) * norm * 0.5 * (1 - eps)
+        pb = np.exp(-((u + dd) ** 2) / (2.0 * sig2)) * norm * 0.5 * (1 - eps)
+        po = eps * 2.0
+        tot = pa + pb + po
+        w = (pa + pb) / tot                                                      # the weight of a value that is not an outlier
+        r = pa / np.maximum(pa + pb, 1e-300)                                     # its probability of the upper band
+        num = ((2.0 * r - 1.0) * u * w * valid).sum(axis=1)
+        den = (w * valid).sum(axis=1)
+        d = np.where(den > 0, num / np.maximum(den, 1e-9), 0.0)
+        d = np.maximum(d, 0.0)
+    # the log-likelihood ratio against d = 0 under the same outlier-robust density
+    def ll_at(dd):
+        pa = np.exp(-((u - dd) ** 2) / (2.0 * sig2)) * norm * 0.5 * (1 - eps)
+        pb = np.exp(-((u + dd) ** 2) / (2.0 * sig2)) * norm * 0.5 * (1 - eps)
+        return np.log(pa + pb + eps * 2.0)
+    llr = ((ll_at(d[:, None]) - ll_at(0.0)) * valid).sum(axis=1)
+    llr = np.where(n >= 4, llr, 0.0)
     d = np.where(n >= 4, d, np.nan)
-    return d, n
+    return d, n, np.maximum(llr, 0.0)
 
 
 def f_gain(d):

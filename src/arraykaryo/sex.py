@@ -135,7 +135,7 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
     passing = np.array([qc[s]["hard_fail"] == "0" for s in C.samples])
     reported = np.array([qc[s]["reported_sex"] if qc[s]["reported_sex"] != NA else "" for s in C.samples])
     auto_het = np.array([num(qc[s]["het_rate"]) for s in C.samples])
-    baf_sd = np.array([num(qc[s]["baf_sd"]) for s in C.samples])
+    baf_sd = np.array([num(qc[s].get("baf_sd_robust", qc[s]["baf_sd"])) for s in C.samples])
     # the X
     have_x, have_y = "chrX" in C.chroms, "chrY" in C.chroms
     x_lrr = np.full(S, np.nan)

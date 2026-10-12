@@ -1,7 +1,7 @@
 """Window tracks per sample and chromosome: windows of about W probes pooled by probe count (a similar amount of evidence
 everywhere); per window the median corrected LRR, the band deviation d at heterozygous calls (EM fit of the symmetric
-two-band mixture with the sample's own band SD; baf.d_em_windows), and the heterozygous rate relative to the Hardy-Weinberg
-expectation from the cohort's allele frequencies at those probes. Computed for a block of samples at once and stored per
+two-band mixture with the sample's own band SD; baf.d_em_windows) with its log-likelihood ratio against no split, and the
+heterozygous rate relative to the Hardy-Weinberg expectation from the cohort's allele frequencies at those probes. Computed for a block of samples at once and stored per
 chromosome (events/windows/<chrom>.npz) for the calls, the figures and the report."""
 import os
 
@@ -63,8 +63,8 @@ def tracks_for_block(lrr, baf, gt, keep, keep_gt, maf, baf_shift, bounds, sigma)
     u = np.where(np.isfinite(u), u, 0.0)
     uw = u[:, safe]
     hw = het[:, safe] & valid[None, :, :] & np.isfinite(baf[:, safe])
-    d, n_het = d_em_windows(uw.reshape(B * n_win, width), hw.reshape(B * n_win, width), np.repeat(sigma, n_win))
-    d, n_het = d.reshape(B, n_win), n_het.reshape(B, n_win)
+    d, n_het, llr = d_em_windows(uw.reshape(B * n_win, width), hw.reshape(B * n_win, width), np.repeat(sigma, n_win))
+    d, n_het, llr = d.reshape(B, n_win), n_het.reshape(B, n_win), llr.reshape(B, n_win)
     # heterozygous rate against the Hardy-Weinberg expectation at the called probes
     called = (gt >= 0) & keep_gt[None, :] & np.isfinite(maf)[None, :]
     exp_het = 2 * maf * (1 - maf)
@@ -73,7 +73,7 @@ def tracks_for_block(lrr, baf, gt, keep, keep_gt, maf, baf_shift, bounds, sigma)
     observed = (het[:, safe] & cw).sum(axis=2)
     with np.errstate(all="ignore"):
         het_ratio = np.where(expected > 2, observed / expected, np.nan)
-    return dict(lrr_med=lrr_med.astype(np.float32), d=d.astype(np.float32), n_het=n_het.astype(np.int16), het_ratio=het_ratio.astype(np.float32),
+    return dict(lrr_med=lrr_med.astype(np.float32), d=d.astype(np.float32), d_llr=llr.astype(np.float32), n_het=n_het.astype(np.int16), het_ratio=het_ratio.astype(np.float32),
                 n_called=cw.sum(axis=2).astype(np.int16), n_lrr=n_lrr.astype(np.int16))
 
 
