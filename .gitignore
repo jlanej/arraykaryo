@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+ci_out/
+/mock_out/
+/cache/
+# never any data: array exports, caches, pedigrees, sample sheets (the mock is written at test time; the example is fetched by its owner)
+*.vcf
+*.vcf.gz
+*.vcf.gz.tbi
+*.bcf
+*.bcf.csi
+*.ped
+*.npy
+*.npz
+*.zarr
