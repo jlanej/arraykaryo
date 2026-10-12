@@ -300,7 +300,8 @@ Adjacent segments typed as nothing are joined without condition (a boundary betw
 chromosome whose every piece is a little high reads as one segment and is typed as a whole; a typed segment takes in an
 untyped neighbour at the same level when the union types the same (a sliver the scan cut off its event); adjacent segments
 typed alike, over any short untyped piece between them (under 5 Mb or 15% of the joined span), are joined when their levels
-agree and the joined segment types the same. Floors: 2 Mb (a segment's extent counts half of each gap around its first and
+agree (within 0.03, or within 0.1 when the BAF puts both pieces in the same share of cells, within 0.1 of each other: on a
+real array the LRR level of one 26-Mb mosaic loss wanders by 0.05 along it) and the joined segment types the same. Floors: 2 Mb (a segment's extent counts half of each gap around its first and
 last probe, where the change of copy number lies) and 40 probes (`--min-mb`). A segment covering 90% or more of a
 chromosome's probed span is `whole`, of an arm's `p` or `q`, else `stretch`; a whole-X gain or loss is the sex step's call and
 is not repeated.
@@ -337,8 +338,8 @@ the evidence is thin (under 20 heterozygous calls, under 100 probes), where the 
 the event), and the names of the artefact-prone regions it mostly lies in (the MHC, the 8p23.1 and 17q21.31 inversions, the
 X-transposed region, the centromere flanks, the chromosome ends, an acrocentric short arm) - tagged, never removed from
 the table; the digest leaves out a copy change read from the LRR alone in such a region (on the example these are the
-commonest residual calls: a few hundred probes at the centromere flanks, +0.10 to +0.13, no heterozygous calls). **The cohort's own artefact map**: a 1-Mb bin where an event of the same type is called in 2% or more of the samples read
-(three at least) is recurrent - a probe cluster the array reads oddly, or a common copy-number polymorphism (*example*: the
+commonest residual calls: a few hundred probes at the centromere flanks, +0.10 to +0.13, no heterozygous calls). **The cohort's own artefact map**: a 1-Mb bin (on an autosome or the X) where an event of the same type is called in 2% or
+more of the samples read (three at least) is recurrent - a probe cluster the array reads oddly, or a common copy-number polymorphism (*example*: the
 centromere flanks of chromosomes 5 and 10 in 14% of samples, 16p11.2 in 13%, the 9q12 heterochromatin block of CHM13 in
 2.3%) - and an event whose bins are mostly recurrent is tagged `recurrent (N samples)`, never removed from the table. An
 event whose probes lie five times further apart than the chromosome's median spacing is tagged `probe-sparse` (*example*:

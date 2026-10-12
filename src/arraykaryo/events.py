@@ -365,7 +365,9 @@ def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.
                 if j == i + 2 and (typed[i + 1] or gap > max(max_gap_bp, max_gap_frac * span)):
                     continue
                 se = np.hypot(segs[i]["lrr_se"], segs[j]["lrr_se"])
-                if typed[i] in ("gain", "loss") and abs(segs[i]["lrr"] - segs[j]["lrr"]) > max(0.03, 3 * se):
+                fa, fb = type_segment(segs[i], p, L1, L3, use_het=use_het, base=base)[3], type_segment(segs[j], p, L1, L3, use_het=use_het, base=base)[3]
+                same_f = finite(fa) and finite(fb) and abs(fa - fb) <= 0.1                        # the BAF puts both pieces in the same share of cells
+                if typed[i] in ("gain", "loss") and abs(segs[i]["lrr"] - segs[j]["lrr"]) > (0.1 if same_f else max(0.03, 3 * se)):
                     continue
                 if typed[i] in ("loh",) and finite(segs[i]["d"]) and finite(segs[j]["d"]) and abs(segs[i]["d"] - segs[j]["d"]) > 0.04:
                     continue
@@ -705,14 +707,14 @@ def tag_recurrent(ev_rows, n_called, frac=0.05, bin_bp=1_000_000):
     recurrent is tagged 'recurrent (N samples)' - tagged, not removed. Returns the number tagged."""
     cov = {}
     for e in ev_rows:
-        if e["chrom"] in ("chrX", "chrY") or e["source"] != "segmentation":
+        if e["chrom"] == "chrY" or e["source"] != "segmentation":
             continue
         for k in range(int(e["start"]) // bin_bp, int(e["end"]) // bin_bp + 1):
             cov.setdefault((e["chrom"], k, e["type"]), set()).add(e["sample"])
     hot = {k: len(v) for k, v in cov.items() if len(v) >= max(3, frac * n_called)}
     n = 0
     for e in ev_rows:
-        if e["chrom"] in ("chrX", "chrY") or e["source"] != "segmentation":
+        if e["chrom"] == "chrY" or e["source"] != "segmentation":
             continue
         bins = [(e["chrom"], k, e["type"]) for k in range(int(e["start"]) // bin_bp, int(e["end"]) // bin_bp + 1)]
         hits = [hot[b] for b in bins if b in hot]
