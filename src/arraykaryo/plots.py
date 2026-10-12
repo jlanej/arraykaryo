@@ -264,3 +264,251 @@ def fig_kinship(out, kin, ibs0, cls, p, po_cut, log_fn=None):
     if log_fn:
         log_fn("figure: " + os.path.relpath(pth, out), "pedigree")
     return pth
+
+
+# ------------------------------------------------------------------------------------------------------- sample figures
+
+STAIN = {"gneg": "#ffffff", "gpos25": "#c8c8c8", "gpos50": "#9a9a9a", "gpos75": "#6a6a6a", "gpos100": "#2a2a2a", "acen": "#b03a2e", "gvar": "#d7d7e0", "stalk": "#8da0cb"}
+
+
+def _ideogram(ax, G, chrom, x0=0.0, scale=1e6, height=1.0):
+    """The cytogenetic bands of one chromosome as a strip on ax (x in Mb from x0)."""
+    for s, e, name, stain in G.bands.get(chrom, []):
+        ax.add_patch(plt.Rectangle((x0 + s / scale, 0), (e - s) / scale, height, facecolor=STAIN.get(stain, "#ffffff"), edgecolor="#555555", lw=0.3))
+    ax.set_ylim(0, height)
+    ax.set_yticks([])
+
+
+def _event_label(e):
+    f = float(e["f"]) if e["f"] not in ("NA", "", None) else float("nan")
+    cells = "" if (not np.isfinite(f) or f >= 0.9) else " %.0f%%" % (100 * f)
+    where = e["chrom"][3:] + (e["span"] if e["span"] in ("p", "q") else "")
+    return "%s %s%s" % (TYPE_NAME.get(e["type"], e["type"]), where, cells)
+
+
+def _thin(n, max_points):
+    return max(1, int(np.ceil(n / float(max_points))))
+
+
+def fig_genome(out, ctx, name, events, rohs, kar, max_points=40000):
+    """events/figures/<sample>/genome: every chromosome in one image - the corrected LRR with the segment levels, the BAF, the
+    heterozygous ratio per window with the runs of homozygosity - events drawn as coloured bars with labels."""
+    C, G, corr, masks = ctx.C, ctx.G, ctx.corr, ctx.masks
+    i = C.sample_index(name)
+    chroms = [c for c in C.chroms if c in ctx.tracks or c == "chrY"]
+    off, total = {}, 0.0
+    for c in chroms:
+        off[c] = total
+        total += G.length[c] / 1e6
+    fig, axes = plt.subplots(4, 1, figsize=(260 * MM, 120 * MM), sharex=True, gridspec_kw=dict(height_ratios=[0.25, 1.1, 1.0, 0.7], hspace=0.08))
+    ax_ev, ax_l, ax_b, ax_h = axes
+    xs_l, ys_l, xs_b, ys_b, hb = [], [], [], [], []
+    q = ctx.qc[name]
+    sx = ctx.sex.get(name, {})
+    xy = sx.get("base", "") == "XY"
+    for c in chroms:
+        pr = C.probes(c)
+        m = masks[c]
+        keep = m["keep"] & (~pr.par if c in ("chrX", "chrY") else True)
+        if c == "chrY":
+            L = corr.apply(C, c, sample_idx=[i], reference=False)[0]
+            keep &= ~pr.par
+        else:
+            L = corr.apply(C, c, sample_idx=[i])[0]
+        step = _thin(int(keep.sum()), max_points // len(chroms))
+        idx = np.flatnonzero(keep)[::step]
+        xs_l.append(off[c] + pr.pos[idx] / 1e6)
+        ys_l.append(L[idx])
+        g = np.asarray(C.gt(c)[i])
+        b = np.asarray(C.baf(c)[i], dtype=np.float32)
+        kg = m["keep_gt"] & (g >= 0) & np.isfinite(b)
+        idb = np.flatnonzero(kg)[::_thin(int(kg.sum()), max_points // len(chroms))]
+        xs_b.append(off[c] + pr.pos[idb] / 1e6)
+        ys_b.append(np.clip(b[idb], -0.02, 1.02))
+        hb.append(g[idb] == 1)
+    x_l, y_l = np.concatenate(xs_l), np.concatenate(ys_l)
+    ax_l.scatter(x_l, np.clip(y_l, -1.5, 1.2), s=1.0, c=PAL["lrr"], lw=0, rasterized=True, alpha=0.6)
+    x_b, y_b, het = np.concatenate(xs_b), np.concatenate(ys_b), np.concatenate(hb)
+    ax_b.scatter(x_b[~het], y_b[~het], s=0.8, c=PAL["baf"], lw=0, rasterized=True, alpha=0.5)
+    ax_b.scatter(x_b[het], y_b[het], s=1.2, c=PAL["het"], lw=0, rasterized=True, alpha=0.8)
+    # window heterozygous ratio
+    for c in chroms:
+        if c not in ctx.tracks:
+            continue
+        lay = ctx.layout[c]
+        hr = np.asarray(ctx.tracks[c]["het_ratio"][i], dtype=float)
+        ax_h.plot(off[c] + lay["mids"] / 1e6, np.clip(hr, 0, 1.6), color=PAL["het"], lw=0.7)
+    for k, c in enumerate(chroms):
+        for ax in (ax_l, ax_b, ax_h):
+            if k % 2:
+                ax.axvspan(off[c], off[c] + G.length[c] / 1e6, color=PAL["band"], lw=0, zorder=0)
+            cen = G.centromere[c]
+            if cen[1]:
+                ax.axvline(off[c] + cen[0] / 1e6, color="#bbbbbb", lw=0.4, ls=":", zorder=0)
+    one = ctx.levels[0]
+    ax_l.axhline(0, color=PAL["ref"], lw=0.6, ls=":")
+    ax_l.axhline(one, color=PAL["loss"], lw=0.5, ls=":")
+    ax_l.axhline(ctx.levels[1], color=PAL["gain"], lw=0.5, ls=":")
+    ax_l.text(total, one, " 1 copy", fontsize=6, color=PAL["loss"], va="center")
+    ax_l.text(total, ctx.levels[1], " 3 copies", fontsize=6, color=PAL["gain"], va="center")
+    for v in (0.5,):
+        ax_b.axhline(v, color=PAL["ref"], lw=0.5, ls=":")
+    ax_h.axhline(1.0, color=PAL["ref"], lw=0.5, ls=":")
+    # events and runs
+    for e in events:
+        c = e["chrom"]
+        if c not in off:
+            continue
+        x0, x1 = off[c] + int(e["start"]) / 1e6, off[c] + int(e["end"]) / 1e6
+        col = TYPE_COLOUR.get(e["type"], PAL["lrr"])
+        y = {"gain": 0.78, "loss": 0.55, "loh": 0.32, "roh": 0.1}.get(e["type"], 0.5)
+        ax_ev.plot([x0, x1], [y, y], color=col, lw=4, solid_capstyle="butt")
+        ax_ev.text((x0 + x1) / 2, y + 0.1, _event_label(e), fontsize=5.5, ha="center", va="bottom", color=col)
+        lv = float(e["lrr"]) if e["lrr"] not in ("NA", "") and e["source"] != "sex" else np.nan
+        if np.isfinite(lv) and e["type"] in ("gain", "loss"):
+            ax_l.plot([x0, x1], [lv, lv], color=col, lw=2.0, solid_capstyle="butt")
+        elif e["type"] in ("loh", "roh"):
+            ax_l.plot([x0, x1], [0, 0], color=col, lw=2.0, solid_capstyle="butt")
+        for ax in (ax_l, ax_b, ax_h):
+            ax.axvspan(x0, x1, color=col, alpha=0.08, lw=0, zorder=0)
+    for r in rohs:
+        c = r["chrom"]
+        if c in off:
+            ax_h.plot([off[c] + int(r["start"]) / 1e6, off[c] + int(r["end"]) / 1e6], [0.03, 0.03], color=PAL["roh"], lw=3, solid_capstyle="butt")
+    ax_ev.set_ylim(0, 1.05)
+    ax_ev.set_yticks([])
+    for sp in ("left", "bottom"):
+        ax_ev.spines[sp].set_visible(False)
+    ax_l.set_ylim(-1.5, 1.2)
+    ax_l.set_ylabel("LRR (corrected)")
+    ax_b.set_ylim(-0.02, 1.02)
+    ax_b.set_ylabel("BAF")
+    ax_h.set_ylim(0, 1.6)
+    ax_h.set_ylabel("het ratio")
+    ax_h.set_xlim(0, total)
+    ax_h.set_xticks([off[c] + G.length[c] / 2e6 for c in chroms])
+    ax_h.set_xticklabels([c[3:] for c in chroms], fontsize=6)
+    ax_h.set_xlabel("chromosome")
+    title = "%s: %s%s" % (name, kar.get("karyotype", "") if kar else "", ("; QC flags: " + q["flags"]) if q.get("flags", "NA") != "NA" else "")
+    ax_ev.set_title(title, fontsize=9, loc="left")
+    handles = [plt.Line2D([], [], color=TYPE_COLOUR[t], lw=4, label=TYPE_NAME[t]) for t in ("gain", "loss", "loh", "roh")]
+    handles += [plt.Line2D([], [], marker="o", ls="", color=PAL["het"], markersize=3, label="BAF at heterozygous calls"), plt.Line2D([], [], marker="o", ls="", color=PAL["baf"], markersize=3, label="BAF at homozygous calls"),
+                plt.Line2D([], [], color=PAL["het"], lw=1, label="heterozygous rate / expected (per window)"), plt.Line2D([], [], color=PAL["roh"], lw=3, label="run of homozygosity")]
+    ax_h.legend(handles=handles, frameon=False, fontsize=5.5, loc="upper center", ncol=4, bbox_to_anchor=(0.5, -0.45))
+    fdir = os.path.join(out, "events", "figures", name)
+    return save(fig, os.path.join(fdir, "genome"), "%s, every chromosome" % name,
+                "Corrected LRR (dotted lines: two copies, one copy, three copies on the cohort's scale), BAF (green at heterozygous calls) and the heterozygous rate against expectation per window; events as bars above with their type and cell fraction, shaded across the rows; runs of homozygosity as orange bars. %s" % title,
+                [("vermillion", "gain"), ("blue", "loss"), ("reddish purple", "copy-neutral LOH"), ("orange", "run of homozygosity"), ("green", "heterozygous calls / rate")])
+
+
+def fig_chrom(out, ctx, name, chrom, events, rohs, kar, max_points=12000):
+    """events/figures/<sample>/chr_<chrom>: one chromosome - ideogram, LRR with the segment levels, BAF with the expected bands of the
+    called cell fraction, heterozygous ratio with the runs of homozygosity."""
+    from .baf import d_from_f
+    C, G, corr, masks = ctx.C, ctx.G, ctx.corr, ctx.masks
+    i = C.sample_index(name)
+    pr = C.probes(chrom)
+    m = masks[chrom]
+    is_y = chrom == "chrY"
+    keep = m["keep"] & (~pr.par if chrom in ("chrX", "chrY") else True)
+    L = corr.apply(C, chrom, sample_idx=[i], reference=not is_y)[0]
+    g = np.asarray(C.gt(chrom)[i])
+    b = np.asarray(C.baf(chrom)[i], dtype=np.float32)
+    fig, axes = plt.subplots(4, 1, figsize=(200 * MM, 125 * MM), sharex=True, gridspec_kw=dict(height_ratios=[0.18, 1.1, 1.0, 0.7], hspace=0.1))
+    ax_i, ax_l, ax_b, ax_h = axes
+    _ideogram(ax_i, G, chrom)
+    ax_i.set_title("%s, %s: %s" % (name, chrom, "; ".join(_event_label(e) + (" (%s)" % e["bands"] if e.get("bands") not in ("", "NA", None) else "") for e in events) or "no event"), fontsize=9, loc="left")
+    idx = np.flatnonzero(keep)[::_thin(int(keep.sum()), max_points)]
+    pos = pr.pos / 1e6
+    ax_l.scatter(pos[idx], np.clip(L[idx], -1.5 if not is_y else -6, 1.2), s=1.5, c=PAL["lrr"], lw=0, rasterized=True, alpha=0.7)
+    if not is_y:
+        ax_l.axhline(0, color=PAL["ref"], lw=0.6, ls=":")
+        ax_l.axhline(ctx.levels[0], color=PAL["loss"], lw=0.5, ls=":")
+        ax_l.axhline(ctx.levels[1], color=PAL["gain"], lw=0.5, ls=":")
+        ax_l.set_ylim(-1.5, 1.2)
+    else:
+        ax_l.set_ylim(-6, 1.5)
+    kg = m["keep_gt"] & (g >= 0) & np.isfinite(b)
+    het = kg & (g == 1)
+    idb = np.flatnonzero(kg)[::_thin(int(kg.sum()), max_points)]
+    hh = g[idb] == 1
+    ax_b.scatter(pos[idb][~hh], np.clip(b[idb][~hh], -0.02, 1.02), s=1.2, c=PAL["baf"], lw=0, rasterized=True, alpha=0.5)
+    ax_b.scatter(pos[idb][hh], np.clip(b[idb][hh], -0.02, 1.02), s=2.5, c=PAL["het"], lw=0, rasterized=True, alpha=0.9)
+    ax_b.axhline(0.5, color=PAL["ref"], lw=0.5, ls=":")
+    if chrom in ctx.tracks:
+        lay = ctx.layout[chrom]
+        hr = np.asarray(ctx.tracks[chrom]["het_ratio"][i], dtype=float)
+        ax_h.plot(lay["mids"] / 1e6, np.clip(hr, 0, 1.6), color=PAL["het"], lw=0.9)
+        ax_h.axhline(1.0, color=PAL["ref"], lw=0.5, ls=":")
+    for e in events:
+        x0, x1 = int(e["start"]) / 1e6, int(e["end"]) / 1e6
+        col = TYPE_COLOUR.get(e["type"], PAL["lrr"])
+        f = float(e["f"]) if e["f"] not in ("NA", "") else np.nan
+        lv = float(e["lrr"]) if e["lrr"] not in ("NA", "") and e["source"] != "sex" else np.nan
+        if np.isfinite(lv) and e["type"] in ("gain", "loss"):
+            ax_l.plot([x0, x1], [lv, lv], color=col, lw=2.5, solid_capstyle="butt", label="segment median LRR %.3f" % lv)
+        elif e["type"] in ("loh", "roh") and not is_y:
+            ax_l.plot([x0, x1], [0, 0], color=col, lw=2.5, solid_capstyle="butt")
+        if np.isfinite(f) and e["type"] in ("gain", "loss", "loh") and f < 1.0 and not is_y:
+            d = d_from_f(f, e["type"])
+            for y in (0.5 - d, 0.5 + d):
+                ax_b.plot([x0, x1], [y, y], color=col, lw=1.2, ls="--", label="expected bands at f=%.2f" % f if y > 0.5 else None)
+        elif e["type"] == "gain" and np.isfinite(f) and f >= 1.0 and not is_y:
+            for y in (1 / 3, 2 / 3):
+                ax_b.plot([x0, x1], [y, y], color=col, lw=1.2, ls="--", label="expected bands at 3 copies" if y > 0.5 else None)
+        for ax in (ax_l, ax_b, ax_h):
+            ax.axvspan(x0, x1, color=col, alpha=0.1, lw=0, zorder=0)
+    for r in rohs:
+        ax_h.plot([int(r["start"]) / 1e6, int(r["end"]) / 1e6], [0.03, 0.03], color=PAL["roh"], lw=4, solid_capstyle="butt", label="run of homozygosity (%.1f Mb)" % (int(r["size_bp"]) / 1e6))
+    for ax in (ax_l, ax_b, ax_h):
+        for a, bb in G.par.get(chrom, ()):
+            ax.axvspan(a / 1e6, bb / 1e6, color=PAL["band"], lw=0, zorder=0)
+    ax_l.set_ylabel("LRR" + (" (GC-corrected, raw level)" if is_y else " (corrected)"))
+    ax_b.set_ylim(-0.02, 1.02)
+    ax_b.set_ylabel("BAF")
+    ax_h.set_ylim(0, 1.6)
+    ax_h.set_ylabel("het ratio")
+    ax_h.set_xlabel("position on %s (Mb)" % chrom)
+    ax_h.set_xlim(0, G.length[chrom] / 1e6)
+    for ax in (ax_l, ax_b, ax_h):
+        h, l = ax.get_legend_handles_labels()
+        if h:
+            ax.legend(h[:4], l[:4], frameon=False, fontsize=6, loc="upper right")
+    fdir = os.path.join(out, "events", "figures", name)
+    return save(fig, os.path.join(fdir, "chr_%s" % chrom), "%s, %s" % (name, chrom),
+                "Ideogram, corrected LRR with the called segment's median level (dotted: two, one and three copies on the cohort's scale), BAF with the bands expected at the called cell fraction (dashed), the heterozygous rate per window against expectation with runs of homozygosity. Events shaded; pseudoautosomal regions in grey.",
+                [("vermillion", "gain"), ("blue", "loss"), ("reddish purple", "copy-neutral LOH"), ("orange", "run of homozygosity"), ("green", "heterozygous calls / rate")])
+
+
+def _figures_worker(args):
+    out, cache_dir, names = args["out"], args["cache"], args["names"]
+    from .events import SampleContext, read_events, read_karyotypes, read_rohs
+    from .util import read_json
+    ctx = SampleContext(out, cache_dir)
+    summ = read_json(os.path.join(out, "events", "summary.json"))
+    cal = summ["calibration"]
+    ctx.levels = (cal["one_copy_lrr"], cal["three_copies_lrr"])
+    ev_all, roh_all, kar_all = read_events(out), read_rohs(out), read_karyotypes(out)
+    n = 0
+    for name in names:
+        evs = [e for e in ev_all if e["sample"] == name]
+        rohs = [r for r in roh_all if r["sample"] == name]
+        kar = kar_all.get(name, {})
+        fig_genome(out, ctx, name, evs, rohs, kar)
+        for c in sorted({e["chrom"] for e in evs}, key=lambda c: ctx.G.chrom_order().get(c, 99)):
+            fig_chrom(out, ctx, name, c, [e for e in evs if e["chrom"] == c], [r for r in rohs if r["chrom"] == c], kar)
+        n += 1
+    return n
+
+
+def draw_sample_figures(out, cache_dir, names, threads=1, log_fn=None):
+    """The genome figure and one figure per chromosome with an event for every named sample; samples in parallel."""
+    from concurrent.futures import ProcessPoolExecutor
+    if not names:
+        return 0
+    k = max(1, int(np.ceil(len(names) / float(max(threads, 1)))))
+    jobs = [dict(out=out, cache=cache_dir, names=names[a:a + k]) for a in range(0, len(names), k)]
+    if threads > 1 and len(jobs) > 1:
+        with ProcessPoolExecutor(max_workers=threads) as ex:
+            return sum(ex.map(_figures_worker, jobs))
+    return sum(_figures_worker(j) for j in jobs)

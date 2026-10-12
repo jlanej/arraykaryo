@@ -7,8 +7,8 @@ homozygous, in every cell or in part of them - with runs of homozygosity, each w
 self-contained report. The array sibling of [triokaryo](https://github.com/jlanej/triokaryo), which reads the same
 events from whole-genome sequencing of parent-offspring trios.
 
-**Status: 0.3.0 - milestones 1 to 3 of [PROMPT.md](PROMPT.md).** `inspect`, `mock`, `extract`, `qc`, `sex` and `pedigree` work and
-are tested on the mock; `events` and `report` are next. Methods and every threshold with its source:
+**Status: 0.4.0 - milestones 1 to 4 of [PROMPT.md](PROMPT.md).** `inspect`, `mock`, `extract`, `qc`, `sex`, `pedigree` and `events`
+work and are tested on the mock; `report` and `run` are next. Methods and every threshold with its source:
 [docs/METHODS.md](docs/METHODS.md); every file and column: [docs/OUTPUT.md](docs/OUTPUT.md); timings: [benchmarks/](benchmarks/README.md).
 
 ## What goes in
@@ -24,6 +24,7 @@ arraykaryo extract --bcf cohort.bcf --out out --threads 8       # one pass into 
 arraykaryo qc --out out --sample-sheet samples.tsv --threads 8  # probe QC, sample QC (pass or flagged with the reason), the GC-wave correction, the cohort reference
 arraykaryo sex --out out                                        # the sex-chromosome complement of every sample, mosaics included, against the reported sex
 arraykaryo pedigree --out out --pedigree trios.tsv              # kinship and IBS0 of every pair, the families they imply, the check against the given pedigree
+arraykaryo events --out out --threads 8                         # near-chromosomal events and runs of homozygosity per sample, cell fractions, karyotype strings, figures
 arraykaryo mock --out mock_out                                  # a simulated export with families, planted events and QC failures, and truth.json
 ```
 
@@ -31,7 +32,8 @@ arraykaryo mock --out mock_out                                  # a simulated ex
 
 `out/cache/` (the extraction), `out/qc/` (probes.tsv, samples.tsv, the correction, figures), `out/sex/` (sex.tsv, the X-against-Y
 figure, X and Y tracks of every sample not plainly XX or XY), `out/pedigree/` (relatedness.tsv, families.tsv, the inferred
-pedigree, check.tsv, the kinship-against-IBS0 figure); `events` and `report` follow. Every file and
+pedigree, check.tsv, the kinship-against-IBS0 figure), `out/events/` (events.all.tsv, roh.all.tsv, karyotypes.tsv, the
+genome-wide and per-chromosome figures of every sample with an event or a flag); `report` follows. Every file and
 column: [docs/OUTPUT.md](docs/OUTPUT.md).
 
 ## Development

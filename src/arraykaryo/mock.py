@@ -288,7 +288,9 @@ def signal(person, pr, chrom, rng, batch_offset, probe_offset, gc_z, gc1mb_z, no
 # ------------------------------------------------------------------------------------------------------------------ cohort
 
 def build(out, n_samples=60, seed=1, genome="chm13", contigs=DEFAULT_CONTIGS, full=False, density_kb=12.0, trios=4, duos=2, events=True, families=True,
-          qc_failures=True, noise=1.0, cell_fraction=1.0, log_fn=log):
+          qc_failures=True, noise=1.0, cell_fraction=1.0, extra_events=None, lrr_sd=None, log_fn=log):
+    """extra_events: a list of dicts (chrom, start, end (None: the chromosome end), f, kind (gain/loss/loh/roh), label, cls) each planted
+    in its own singleton sample (the calibration study); lrr_sd: a fixed per-sample LRR noise instead of the 0.10-0.19 draw."""
     t0 = time.time()
     rng = np.random.default_rng(seed)
     G = load_genome(genome)
@@ -328,7 +330,7 @@ def build(out, n_samples=60, seed=1, genome="chm13", contigs=DEFAULT_CONTIGS, fu
     by_name = {p.name: p for p in people}
     # per-sample noise and batch
     for k, p in enumerate(people):
-        p.lrr_sd = float(rng.uniform(0.10, 0.19))
+        p.lrr_sd = float(rng.uniform(0.10, 0.19)) if lrr_sd is None else float(lrr_sd)
         p.baf_sd = float(rng.uniform(0.03, 0.05))
         p.wave = float(rng.normal(0, 1) * 0.010)
         p.wave2 = float(rng.normal(0, 1) * 0.008)
@@ -450,6 +452,14 @@ def build(out, n_samples=60, seed=1, genome="chm13", contigs=DEFAULT_CONTIGS, fu
             sex_truth.append(dict(sample=roles["xxy"].name, chrom="chrX", type="gain", f=1.0, label="47,XXY"))
         if "x0" in roles:
             sex_truth.append(dict(sample=roles["x0"].name, chrom="chrX", type="loss", f=1.0, label="45,X"))
+    for k, x in enumerate(extra_events or []):
+        if x["chrom"] not in probes:
+            continue
+        q = take()
+        q.role = (q.role + "," if q.role else "") + "extra_%d" % k
+        e = plant(q, probes[x["chrom"]], x["chrom"], x["start"], x.get("end"), x["f"], x["kind"], x.get("label", "planted"), x.get("cls", "stretch"), rng)
+        if e:
+            truth_events.append(e)
     # the export columns: the person's own name, except the swapped pair
     column_of = {p.name: p.name for p in people}
     if swap:
@@ -462,16 +472,19 @@ def build(out, n_samples=60, seed=1, genome="chm13", contigs=DEFAULT_CONTIGS, fu
     fh = pysam.BGZFile(vcf_path, "wb")
     fh.write(h.encode())
     n_records = {}
+    for c in chroms:                                                            # the wave is a genome-wide function of GC: standardise over all probes
+        probes[c]["gc1mb"] = window_mean(probes[c]["pos"], probes[c]["gc"].astype(float), 500_000)
+    all_gc = np.concatenate([probes[c]["gc"].astype(float) for c in chroms])
+    all_gc1 = np.concatenate([probes[c]["gc1mb"] for c in chroms])
+    gc_mean, gc_sd, gc1_mean, gc1_sd = all_gc.mean(), all_gc.std() + 1e-9, all_gc1.mean(), all_gc1.std() + 1e-9
     for c in chroms:
         pr = probes[c]
         n = pr["pos"].size
         probe_offset = rng.normal(0, 0.08, n)
         batch_offset = {b: rng.normal(0, 0.04, n) for b in batches}
         gc = pr["gc"].astype(float)
-        gc_z = (gc - gc.mean()) / (gc.std() + 1e-9)
-        gc1 = window_mean(pr["pos"], gc, 500_000)
-        gc1_z = (gc1 - gc1.mean()) / (gc1.std() + 1e-9)
-        pr["gc1mb"] = gc1
+        gc_z = (gc - gc_mean) / gc_sd
+        gc1_z = (pr["gc1mb"] - gc1_mean) / gc1_sd
         cols = []
         for p in order:
             gt, lrr, baf = signal(p, pr, c, rng, batch_offset[p.batch], probe_offset, gc_z, gc1_z, noise, cell_fraction)

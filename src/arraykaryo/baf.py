@@ -27,27 +27,40 @@ def loglik_grid(u, sigma, grid=D_GRID):
     return (m + np.log(np.exp(a - m) + np.exp(b - m))).sum(axis=0) - u.size * np.log(sigma)
 
 
+MAX_FIT = 4000      # heterozygous calls used by a fit (an evenly spaced subsample beyond: the SE of d at 4,000 calls is under 0.001)
+COARSE = D_GRID[::5]
+
+
 def fit_d(baf, sigma=None, grid=D_GRID):
     """The maximum-likelihood d of one set of heterozygous-call BAFs with a shared band SD. sigma given: the sample's band SD
     (from its own heterozygous calls); sigma None: fitted jointly on a grid. Returns (d, sigma, llr) with llr the log-likelihood
-    ratio against d = 0 (0 when there are fewer than 4 values)."""
+    ratio against d = 0 (0 when there are fewer than 4 values; scaled to the full count when a subsample was fitted). The
+    search is coarse (every fifth grid point) then fine around the best."""
     u = fold(np.asarray(baf, dtype=np.float64))
     u = u[np.isfinite(u)]
-    if u.size < 4:
+    n_all = u.size
+    if n_all < 4:
         return float("nan"), float("nan"), 0.0
+    if n_all > MAX_FIT:
+        u = u[:: int(np.ceil(n_all / float(MAX_FIT)))]
+    scale = n_all / float(u.size)
     if sigma is None:
         best = (-np.inf, 0.0, 0.05)
         for s in (0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.13):
-            ll = loglik_grid(u, s, grid)
+            ll = loglik_grid(u, s, COARSE)
             k = int(np.argmax(ll))
             if ll[k] > best[0]:
-                best = (ll[k], float(grid[k]), s)
-        _, d, sigma = best
-        ll = loglik_grid(u, sigma, grid)
+                best = (ll[k], float(COARSE[k]), s)
+        _, d0, sigma = best
     else:
-        ll = loglik_grid(u, sigma, grid)
+        ll = loglik_grid(u, sigma, COARSE)
+        d0 = float(COARSE[int(np.argmax(ll))])
+    fine = grid[(grid >= d0 - 0.012) & (grid <= d0 + 0.012)]
+    if fine.size == 0 or fine[0] > 0.0:
+        fine = np.concatenate([[0.0], fine])
+    ll = loglik_grid(u, sigma, fine)
     k = int(np.argmax(ll))
-    return float(grid[k]), float(sigma), float(ll[k] - ll[0])
+    return float(fine[k]), float(sigma), float((ll[k] - ll[0]) * scale)
 
 
 def d_em_windows(u, valid, sigma, iters=12):

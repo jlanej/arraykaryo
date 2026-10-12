@@ -20,7 +20,6 @@ from . import __version__
 from .util import log
 
 TODO = {
-    "events": "near-chromosomal gains, losses, copy-neutral LOH and runs of homozygosity, mosaic or not (PROMPT.md, section 4.5)",
     "report": "the cohort report and the per-sample pages (PROMPT.md, section 4.6)",
     "run": "extract, qc, sex, pedigree, events and report in one go (PROMPT.md, section 4.8)",
 }
@@ -88,6 +87,17 @@ def cmd_pedigree(a):
     return 0
 
 
+def cmd_events(a):
+    from .events import run_events
+    from .util import is_done
+    if is_done(a.out, "events") and not a.redo:
+        log("events is done (--redo to repeat)", "events")
+        return 0
+    params = dict(min_mb=a.min_mb, window=a.window)
+    run_events(a.out, cache_dir=cache_dir(a), threads=a.threads, params=params, figures=a.figures)
+    return 0
+
+
 def cmd_todo(a):
     sys.exit("arraykaryo %s is not implemented yet: %s" % (a.cmd, TODO[a.cmd]))
 
@@ -147,6 +157,12 @@ def build_parser():
     pd.add_argument("--pedigree", default="", help="a pedigree to check: the house form (#kid dad mom kid_sex dad_sex mom_sex), a PLINK .fam, or any table naming the ids")
     pd.add_argument("--sample-sheet", default="", help="the sample sheet (an age column orients duos)")
     pd.set_defaults(func=cmd_pedigree)
+    ev = sub.add_parser("events", help="near-chromosomal events and runs of homozygosity per sample, with cell fractions; karyotype strings; figures")
+    add_common(ev)
+    ev.add_argument("--min-mb", type=float, default=2.0, help="the smallest segment reported, in Mb (default 2)")
+    ev.add_argument("--window", type=int, default=100, help="probes per window (default 100)")
+    ev.add_argument("--figures", default="flagged", choices=["flagged", "all", "none"], help="figures for samples with an event or a flag (default), for all, or none")
+    ev.set_defaults(func=cmd_events)
     for name, what in TODO.items():
         t = sub.add_parser(name, help="(not yet implemented) " + what)
         add_common(t, bcf=(name == "run"))

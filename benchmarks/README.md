@@ -19,3 +19,10 @@ repository.
 | 0.2.0 | pytest (19 tests, the mock built once) | - | - | 22 s | - |
 | 0.3.0 | pedigree (11,370 probes, 60 samples, the plink2 cross-check apart) | 60 x 82k | 1 | 1.3 s | - |
 | 0.3.0 | pytest (23 tests) | - | - | 29 s | - |
+| 0.4.0 | qc (two passes, figures) | 2,000 x 196k (chr1) | 8 (one chromosome: one used) | 85 s | 3.5 GB resident, file-backed (released block by block from 0.4.0) |
+| 0.4.0 | pedigree (4,684 probes on chr1; the HWE exact test over 196k probes is most of it) | 2,000 x 196k | 1 | 19 s | 1.4 GB |
+| 0.4.0 | events: window tracks | 2,000 x 196k | 1 (one chromosome) | 65 s | - |
+| 0.4.0 | events: calls, before the vectorised scan | 2,000 x 196k | 8 | 188 s (0.73 core-s per sample) | 2.7 GB |
+| 0.4.0 | events: one sample's calls on chr1 (1,939 windows), after | - | 1 | 0.30 s | - |
+| 0.4.0 | events with figures for 22 samples | 60 x 82k | 4 | 5.7 s | - |
+| 0.4.0 | pytest (28 tests) | - | - | 47 s | - |

@@ -35,7 +35,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-from .cache import Cache
+from .cache import Cache, release
 from .util import NA, log, mark_done, read_json, read_sample_sheet, robust_sd, write_json, write_tsv
 
 BLOCK = 4096
@@ -189,6 +189,9 @@ def pass1_chrom(args):
             out["y_lrr_n"] += (finiteL & use).sum(axis=1)
             out["y_called"] += (called & use & snv[None, :]).sum(axis=1)
             out["y_total"] += np.broadcast_to(use & snv[None, :], g.shape).sum(axis=1)
+        if (a // BLOCK) % 8 == 7:
+            for mm in (gt, lrr, baf):
+                release(mm)
     return out
 
 
@@ -267,6 +270,8 @@ def pass2_chrom(args):
             d = np.abs(np.diff(v, axis=1))
             out["s_absdiff"] += d.sum(axis=1)
             out["s_absn"] += d.shape[1]
+        if (a // BLOCK) % 8 == 7:
+            release(lrr)
     return out
 
 

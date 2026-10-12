@@ -109,6 +109,18 @@ class Cache:
         return os.path.exists(os.path.join(self.path, "done", chrom + ".json"))
 
 
+def release(mm):
+    """Tell the kernel the memory-mapped array's pages may go (file-backed, read only): the resident size of a long pass stays at one
+    block instead of the whole file. A no-op where madvise is unavailable."""
+    try:
+        import mmap as _mmap
+        m = getattr(mm, "_mmap", None)
+        if m is not None and hasattr(m, "madvise"):
+            m.madvise(_mmap.MADV_DONTNEED)
+    except (AttributeError, ValueError, OSError):
+        pass
+
+
 def array_path(cache_dir, kind, chrom):
     return os.path.join(cache_dir, "%s.%s.npy" % (kind, chrom))
 

@@ -218,6 +218,92 @@ no spurious first-degree pair. QC flags added: `duplicate` on both members of an
 **Hardy-Weinberg, second pass**: after the pedigree, one member of every related pair (third degree or closer) is dropped and
 the exact test recomputed over the unrelated passing samples; `qc/probes.tsv` is updated.
 
+## Events (`events.py`, `windows.py`, `segment.py`, `roh.py`, `karyotype.py`)
+
+Every sample that does not fail QC hard, every chromosome, from the corrected LRR, the BAF and the genotypes; a flagged
+sample is read with its flags beside every call.
+
+**Tracks per window** (`windows.py`): windows of about 100 probes pooled by probe count over the probes kept for LRR
+(a similar amount of evidence everywhere; 1,939 windows on a 196,000-probe chromosome). Per window and sample: the median
+corrected LRR; the band deviation d at heterozygous calls, the location of the symmetric two-band mixture 0.5 +- d fitted by
+maximum likelihood with the sample's own band SD (an EM with a known SD: the E-step gives each folded value's probability of
+the upper band, the M-step d; `baf.d_em_windows`), after re-centring each probe's BAF by the cohort's heterozygous median
+where it shifts by more than 0.01; and the heterozygous rate against the Hardy-Weinberg expectation at the called probes,
+2 p (1 - p) from the cohort's allele frequencies. The per-window mean of |BAF - 0.5| is biased upward by noise and is not
+used. Tracks are computed for blocks of 64 samples at once and stored (`events/windows/`).
+
+**Segmentation** (`segment.py`): the three tracks, standardised by the sample's own window-level noise (LRR from the
+first differences of the window medians, robust to events; d and the heterozygous ratio by their robust spread), are
+segmented jointly by circular binary segmentation (Olshen 2004): for every candidate segment (i, j] the statistic is the
+sum over tracks of the squared t-statistic of the segment's mean against the rest of the chromosome, computed for all
+pairs at once; the best segment is accepted when its statistic exceeds the 3-df chi-square quantile at 0.01 over the number
+of candidate pairs (never below 20) - a Bonferroni-style bound in place of permutations, which the cohort scale forbids - and
+the pieces are scanned again. Adjacent segments whose means do not differ (half that bound) are merged. Every boundary is
+refined to probe resolution by the least-squares split of the probe-level LRR and folded BAF around the window boundary,
+with a tie-break towards the largest probe gap (a boundary in a centromere or a probe desert is placed at the gap). On the X of
+an XY sample the baseline is the sample's own X level and the heterozygous track is not used. *Measured*: 100 null
+chromosomes of 400 windows receive no breakpoint; a planted 300-window segment (1.5 and 2 SD on two tracks) is found
+within two windows.
+
+**Typing** from the probe-level evidence of each segment against the baseline (LRR 0, d 0, heterozygous ratio 1):
+
+| reading | rule |
+| --- | --- |
+| run of homozygosity | heterozygous ratio at or under 0.2 over 40 or more called probes (the calls left are errors, whatever their BAF says); LRR at one copy (under half the one-copy level) makes it a constitutional deletion, LRR up a gain without heterozygosity |
+| gain / loss | the median LRR at least 0.03 and 5 standard errors from 0 (the median's SE from the sample's own probe noise), with the band deviation significant too (d at least 0.02, log-likelihood ratio against d = 0 at least 30 over 20 or more heterozygous calls) unless the shift reaches 0.10 on its own - residual GC waves of a few hundredths survive the correction and must not become events |
+| copy-neutral LOH | LRR flat, d significant |
+| nothing | everything else (a segment the noise cut) |
+
+Adjacent segments typed alike, over any short untyped piece between them (under 5 Mb or 15% of the joined span), are
+joined when their levels agree and the joined segment types the same. Floors: 2 Mb and 40 probes (`--min-mb`). A
+segment covering 90% or more of a chromosome's probed span is `whole`, of an arm's `p` or `q`, else `stretch`; a whole-X gain
+or loss is the sex step's call and is not repeated.
+
+**Cell fraction**: from the band deviation, the primary estimate - gain f = 4d/(1-2d), loss f = 4d/(1+2d), copy-neutral LOH
+f = 2d (the band positions (1+f)/(2+f), 1/(2-f) and (1+f)/2 solved for f); and from the LRR on the cohort's copy scale, the
+secondary - the one-copy level from the male X against the female X (sex step; -0.53 to -0.55 on the mock, which simulates
+-0.55), the three-copy level from the median LRR of any constitutional trisomy found (0.33 on the mock, which simulates
+0.35), else PennCNV's +0.40 scaled by the cohort's compression. Both are reported; a disagreement above 0.2 is noted. An
+event with f at or above 0.9 is constitutional. *Measured* on the default mock (60 samples, 12-kb spacing, two seeds): the
+constitutional trisomy 21 (f 0.94-0.96 from the BAF), the mosaic gain of 12 at 0.30 (0.27-0.28), the mosaic loss of 7q at
+0.25 (0.23), the mosaic copy-neutral LOH of 11p at 0.40 (0.39-0.40), the 10-Mb 1p36 deletion (one copy, no heterozygosity),
+the 15-Mb run of homozygosity, the whole-chromosome isodisomy of 15 (`upd(15)(iso)?`) and the four sex-chromosome
+events are each found with their type and class, and no null sample receives an event. The detection curve over cell
+fraction and size at the example array's probe spacing is in `docs/calibration/`.
+
+**Runs of homozygosity** (`roh.py`): PLINK's sliding window (Purcell 2007, `--homozyg` defaults): over the called SNV
+probes a window of 50 is homozygous with at most one heterozygous call; a probe is in a run when 5% or more of the windows
+covering it are; runs of 1.5 Mb or more with 100 or more probes, no gap above 1 Mb and at most 50 kb per probe are kept
+(`events/roh.all.tsv`); the genome fraction in runs (F_ROH, over the autosomal probed span) is reported per sample; runs of
+10 Mb or more are events (joined to a segmentation call of the same place when there is one). A whole chromosome without
+heterozygosity is an isodisomic uniparental disomy or consanguinity: both are said, and the trio addition of phase 2 will
+decide (the pedigree step already names the chromosome whose Mendelian errors stand out). The ROH scan is not run on a
+single X (an XY sample, or a 45,X).
+
+**Sex chromosomes**: a whole X gained or lost and a Y lost or gained, in every cell or in part, enter from the sex step with
+its cell fractions. **Flags and tags**: every event carries its evidence (LRR, its SE, d, its log-likelihood ratio, probes,
+heterozygous calls, the two cell fractions) and a note where the evidence is thin (under 20 heterozygous calls, under 100
+probes), where the sample is flagged (its QC flags travel with the event), and the names of the artefact-prone regions it
+mostly lies in (the MHC, the 8p23.1 and 17q21.31 inversions, the centromere flanks, the chromosome ends, an acrocentric
+short arm) - tagged, never removed. A sample whose event count exceeds the cohort median by 3 robust SD is flagged
+`event_count`.
+
+**Karyotype string** (`karyotype.py`): triokaryo's grammar - the modal number and complement, the constitutional terms in
+chromosome order (`+21`, `del(1)(p36.32p36.21)`, `roh(1)(q21.2q24.1)`, `upd(15)(iso)?`), and one line per mosaic with its
+cell fraction: `mos 47,XY,+12[0.28]/46,XY`, `mos 46,XY,del(7)(q11.21q36.3)[0.23]/46,XY`, `mos 46,XX,loh(11)(p15.5p11.12)[0.40]/46,XX`,
+`mos 45,X[0.51]/46,XY` for a mosaic loss of Y; bands from the vendored tables.
+
+**Figures**: for every sample with an event or a flag (`--figures all` for every sample), the genome-wide figure (every
+chromosome: corrected LRR with the one- and three-copy levels and the called segments, BAF, the heterozygous ratio with the
+runs of homozygosity; events as labelled bars) and one figure per chromosome with an event (ideogram, LRR with the
+segment's level, BAF with the bands expected at the called cell fraction, the heterozygous ratio). Each image carries its
+title and legend; a text sidecar goes beside it.
+
+**Performance** (*measured*, 2,000 samples x 196,008 probes, one chromosome, 8 threads): window tracks 65 s (one
+chromosome, so one thread); calls 0.30 s of one core per sample-chromosome of 1,939 windows after vectorising the
+segmentation scan and the merge and fitting d on at most 4,000 heterozygous calls (the SE of d is then under 0.001).
+Projected for the example: about 10 minutes with 8 threads.
+
 ## References
 
 - Peiffer DA et al. (2006) High-resolution genomic profiling of chromosomal aberrations using Infinium whole-genome genotyping. Genome Res 16:1136 (LRR and BAF).

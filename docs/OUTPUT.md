@@ -69,3 +69,24 @@ step). `check.tsv` (when `--pedigree` was given): kid, relative, claimed, found,
 unrelated; claimed parent is a ... relative; undisclosed ... pair; undisclosed duplicate; sex contradiction; not in the
 export), note (what a disagreement means). `summary.json`: counts by class and family kind, the IBS0 floor and the
 parent-offspring/full-sibling cut, the unrelated passing samples, the HWE failures. `figures/kinship_vs_ibs0`: every pair.
+
+## DIR/events/ (`arraykaryo events`)
+
+`events.all.tsv`: one row per event - sample, chrom, start, end (1-based, the first and last kept probe), size_bp, span
+(whole, p, q, stretch), bands (ISCN), type (gain, loss, loh = copy-neutral loss of heterozygosity, roh = run of
+homozygosity), f (the cell fraction read: from the BAF where it is significant, else from the LRR; 1 for a constitutional
+event), f_lrr, f_baf (the two estimates), constitutional (f at or above 0.9), n_probes (with LRR), n_het, n_called, lrr
+(the segment's median corrected LRR; the raw level for a Y event), lrr_se, d (band deviation), d_llr (its log-likelihood
+ratio against 0), het_ratio (heterozygous rate / expected), source (segmentation, roh_scan, sex), artefact (the artefact-prone
+regions the event mostly lies in), note (the evidence in words: a constitutional deletion without heterozygosity; the LRR
+and the BAF disagreeing; thin evidence; the ROH scan's run; a whole chromosome without heterozygosity), qc_pass,
+sample_flags.
+
+`roh.all.tsv`: sample, chrom, start, end, size_bp, n_probes, n_het, bands, lrr (median over the run), whole_chromosome,
+is_event (10 Mb or more). `karyotypes.tsv`: sample, complement, karyotype (the ISCN-like string), n_events, n_roh, f_roh
+(genome fraction in runs), noise_lrr, noise_d, noise_het (the sample's window-level noise per track), qc_pass, flags (NA
+karyotype for a sample not read). `summary.json`: counts by type and class, the copy-scale calibration and its source, the
+event-count cut, the parameters. `windows/<chrom>.npz` and `windows/<chrom>.<track>.npy`: the window layout (bounds, mids,
+spans) and the tracks for every sample (lrr_med, d, n_het, het_ratio, n_called, n_lrr; samples x windows).
+
+`figures/<sample>/genome.png` and `chr_<chrom>.png` (with `.txt` sidecars): for samples with an event or a flag.
