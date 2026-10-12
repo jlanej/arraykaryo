@@ -33,10 +33,11 @@ from .sex import read_sex
 from .util import NA, finite, log, mark_done, num, read_json, robust_sd, write_json, write_tsv
 from .windows import save_tracks, tracks_for_block, window_layout
 
-PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, d_min=0.02, d_llr=30.0, n_het_min=20, het_floor=0.2, n_called_min=40, whole_frac=0.9,
+PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, chrom_z=4.0, chrom_lrr_min=0.03, d_min=0.02, d_llr=30.0, n_het_min=20, het_floor=0.2, n_called_min=40, whole_frac=0.9,
               const_f=0.9, alpha=0.01, q_floor=20.0, merge_div=2.0, block=64, l3_default=0.40, l1_literature=-0.66, sample_block=16)
 # lrr_min / lrr_z: the smallest LRR shift and its significance (the median's SE from the sample's own noise); lrr_alone: below this |LRR| a
-# mosaic gain or loss needs the BAF split too (residual GC waves of a few hundredths survive the correction and must not become events);
+# mosaic gain or loss needs the BAF split too (residual GC waves of a few hundredths survive the correction and must not become events),
+# except a whole chromosome or arm whose level stands chrom_z robust SD out among the sample's chromosomes;
 # d_min / d_llr: the smallest band deviation and its log-likelihood ratio against d = 0 (the segmentation chose the segment on the same
 # data, so the ratio asks more than an unselected test would); het_floor: the heterozygous ratio of a run of homozygosity.
 EVENT_COLS = ["sample", "chrom", "start", "end", "size_bp", "span", "bands", "type", "f", "f_lrr", "f_baf", "constitutional", "n_probes", "n_het", "n_called", "lrr", "lrr_se", "d", "d_llr",
@@ -113,6 +114,37 @@ class SampleContext:
         return self.G.chrom_order()
 
 
+def baseline_split(ctx, i, chroms, baf_sd, sample_sd):
+    """The sample's own baseline band split and the spread of its chromosome-level LRR: d fitted per chromosome arm over the
+    genome (most arms carry no event, so the median is what the array's BAF cluster structure gives every segment of this
+    sample; the robust spread is its noise), and the median corrected LRR per chromosome (its robust spread across the
+    chromosomes is the noise a whole-chromosome or arm event has to beat)."""
+    ds, meds = [], {}
+    for c in chroms:
+        if c == "chrX":
+            continue
+        pr = ctx.C.probes(c)
+        m = ctx.masks[c]
+        g = np.asarray(ctx.C.gt(c)[i])
+        b = np.asarray(ctx.C.baf(c)[i], dtype=np.float32)
+        het = (g == 1) & m["keep_gt"] & np.isfinite(b)
+        hb = b - m["baf_shift"]
+        p_end = ctx.G.p_end.get(c, 0)
+        for arm_mask in (pr.pos <= p_end, pr.pos > p_end):
+            sel = het & arm_mask
+            if sel.sum() >= 300:
+                ds.append(fit_d(hb[sel], sigma=baf_sd)[0])
+        l = np.asarray(ctx.tracks[c]["lrr_med"][i], dtype=float)
+        if np.isfinite(l).sum() >= 5:
+            meds[c] = float(np.nanmedian(l))
+    ds = np.array([d for d in ds if np.isfinite(d)])
+    d0 = float(np.median(ds)) if ds.size >= 6 else 0.0
+    s0 = max(robust_sd(ds), 0.004) if ds.size >= 6 else 0.01
+    mv = np.array(list(meds.values()))
+    s_chrom = max(robust_sd(mv), 0.008) if mv.size >= 6 else 0.02
+    return d0, s0, meds, s_chrom
+
+
 def sample_noise(ctx, i, chroms):
     """The sample's window-level noise per track over the genome: LRR from first differences (robust to events); the band track
     sqrt(2 llr) by its median and robust spread (a half-normal at the null: spread about 0.6); the heterozygous ratio by its
@@ -134,7 +166,7 @@ def sample_noise(ctx, i, chroms):
     return s_l, (z_med, s_z), s_h
 
 
-def call_chromosome(ctx, i, chrom, p, noise, x_base=0.0, use_het=True, sample_sd=0.15, baf_sd=0.04):
+def call_chromosome(ctx, i, chrom, p, noise, x_base=0.0, use_het=True, sample_sd=0.15, baf_sd=0.04, d0=0.0):
     """Segments of one chromosome of one sample with their probe-level evidence (not yet typed as events)."""
     t, lay = ctx.tracks[chrom], ctx.layout[chrom]
     bounds, spans = lay["bounds"], lay["spans"]
@@ -178,7 +210,7 @@ def call_chromosome(ctx, i, chrom, p, noise, x_base=0.0, use_het=True, sample_sd
         se = 1.2533 * sample_sd / np.sqrt(n_lrr)
         hb = b[a:bb][het[a:bb]] - shift[a:bb][het[a:bb]]
         n_het = int(hb.size)
-        d, _, llr = fit_segment_d(hb, baf_sd)
+        d, _, llr = fit_segment_d(hb, baf_sd, d0)
         nc = int(called[a:bb].sum())
         expected = float(np.nansum(exp_het[a:bb][called[a:bb]]))
         observed = int((het[a:bb] & called[a:bb]).sum())
@@ -186,23 +218,30 @@ def call_chromosome(ctx, i, chrom, p, noise, x_base=0.0, use_het=True, sample_sd
         pk = pr.pos[a:bb][kp]
         segs.append(dict(chrom=chrom, a=a, b=bb, start=int(pk[0]), end=int(pk[-1]), n_probes=n_lrr, lrr=lrr, lrr_se=se, d=d, d_llr=llr, n_het=n_het, het_ratio=hr, n_called=nc,
                          n_windows=int(seg_bounds[len(segs) + 1] - seg_bounds[len(segs)]) if len(segs) + 1 < len(seg_bounds) else 0))
-    return segs, dict(L=L, het=het, u=u, called=called, keep=keep, pos=pr.pos, g=g, b=b, shift=shift, exp_het=exp_het, chrom=chrom)
+    return segs, dict(L=L, het=het, u=u, called=called, keep=keep, pos=pr.pos, g=g, b=b, shift=shift, exp_het=exp_het, chrom=chrom, d0=d0)
 
 
-def fit_segment_d(hb, baf_sd):
+def fit_segment_d(hb, baf_sd, d0=0.0):
     """The band deviation of a segment with the sample's robust band SD (the median of |BAF - 0.5| at its heterozygous calls over
-    the genome). The band SD is not fitted jointly: two bands close together and one wider band are nearly the same mixture,
-    so a joint fit on a long segment reports small splits that are not there."""
+    the genome), and its log-likelihood ratio against the sample's baseline split d0. The band SD is not fitted jointly: two
+    bands close together and one wider band are nearly the same mixture, so a joint fit on a long segment reports small
+    splits that are not there."""
     if hb.size < 4:
         return np.nan, np.nan, 0.0
-    return fit_d(hb, sigma=baf_sd if (finite(baf_sd) and baf_sd > 0.01) else None)
+    return fit_d(hb, sigma=baf_sd if (finite(baf_sd) and baf_sd > 0.01) else None, d_ref=d0)
 
 
-def type_segment(s, p, L1, L3, use_het=True):
-    """The event type of a segment from its evidence, or '' when it is nothing; with f_lrr, f_baf, f and notes."""
+def type_segment(s, p, L1, L3, use_het=True, base=None, span="stretch"):
+    """The event type of a segment from its evidence, or '' when it is nothing; with f_lrr, f_baf, f and notes. base: the sample's
+    baseline (d0, s0, s_chrom): the band split every segment of this sample shows and its spread, and the spread of the
+    sample's chromosome-level LRR; span: whole / p / q / stretch (a whole chromosome or arm may be called from the LRR alone
+    when its level stands out among the sample's chromosomes)."""
     notes = []
+    d0, s0, s_chrom = base if base else (0.0, 0.01, 0.02)
     lrr_sig = finite(s["lrr"]) and abs(s["lrr"]) >= max(p["lrr_min"], p["lrr_z"] * s["lrr_se"])
-    d_sig = use_het and finite(s["d"]) and s["d"] >= p["d_min"] and s["d_llr"] >= p["d_llr"] and s["n_het"] >= p["n_het_min"]   # no BAF reading on a single X
+    d_eff = float(np.sqrt(max(s["d"] ** 2 - d0 ** 2, 0.0))) if finite(s["d"]) else np.nan        # the split beyond the sample's baseline
+    d_sig = use_het and finite(s["d"]) and (s["d"] - d0) >= max(p["d_min"], 3.0 * s0) and s["d_llr"] >= p["d_llr"] and s["n_het"] >= p["n_het_min"]
+    big_span = span in ("whole", "p", "q") and finite(s["lrr"]) and abs(s["lrr"]) >= max(p["chrom_lrr_min"], p["chrom_z"] * s_chrom)
     het_floor = use_het and finite(s["het_ratio"]) and s["het_ratio"] <= p["het_floor"] and s["n_called"] >= p["n_called_min"]
     kind = ""
     if het_floor:                                                      # no heterozygosity: the few calls left are errors, whatever their BAF says
@@ -215,7 +254,7 @@ def type_segment(s, p, L1, L3, use_het=True):
             notes.append("no heterozygous calls with LRR up: a gain without heterozygosity (an isodisomic duplication, or contamination)")
         else:
             kind = "roh"
-    elif lrr_sig and (d_sig or abs(s["lrr"]) >= p["lrr_alone"] or not use_het):
+    elif lrr_sig and (d_sig or abs(s["lrr"]) >= p["lrr_alone"] or big_span):
         kind = "gain" if s["lrr"] > 0 else "loss"
     elif d_sig:
         kind = "loh"
@@ -227,7 +266,7 @@ def type_segment(s, p, L1, L3, use_het=True):
             f_lrr = float(min(max(s["lrr"] / L3, 0.0), 1.0))
         elif kind == "loss":
             f_lrr = float(min(max(s["lrr"] / L1, 0.0), 1.0))
-    f_baf = f_from_d(s["d"], kind if kind != "roh" else "loh") if (d_sig and kind != "roh") else np.nan
+    f_baf = f_from_d(d_eff, kind if kind != "roh" else "loh") if (d_sig and kind != "roh") else np.nan
     if kind == "roh":
         f = 1.0
     elif kind == "loh":
@@ -253,7 +292,7 @@ def segment_evidence(pd, a, b, sample_sd, baf_sd):
     if n_lrr == 0:
         return None
     hb = bb[a:b][het[a:b]] - shift[a:b][het[a:b]]
-    d, _, llr = fit_segment_d(hb, baf_sd)
+    d, _, llr = fit_segment_d(hb, baf_sd, pd.get("d0", 0.0))
     exp_het = pd.get("exp_het")
     nc = int(called[a:b].sum())
     expected = float(np.nansum(exp_het[a:b][called[a:b]])) if exp_het is not None else 0.0
@@ -263,7 +302,7 @@ def segment_evidence(pd, a, b, sample_sd, baf_sd):
                 n_het=int(hb.size), het_ratio=observed / expected if expected > 2 else np.nan, n_called=nc, n_windows=0)
 
 
-def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.15, max_gap_bp=5_000_000):
+def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.15, max_gap_bp=5_000_000, base=None):
     """Adjacent segments typed alike (the same kind, levels within reach) are joined, over any short untyped segment between them -
     the segmentation cuts a long event where its windows are noisy, and the pieces must become one event. Before that, adjacent
     segments typed as nothing are joined without condition (a boundary between two nothings is noise), so that a chromosome
@@ -271,7 +310,8 @@ def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.
     neighbour whose level agrees when the union still types the same (a sliver the scan cut off its event)."""
     if len(segs) < 2:
         return segs
-    typed = [type_segment(s, p, L1, L3, use_het=use_het)[0] for s in segs]
+    T = lambda s: type_segment(s, p, L1, L3, use_het=use_het, base=base)[0]  # noqa: E731
+    typed = [T(s) for s in segs]
     # 1. nothing + nothing at the same level -> one segment (a sliver of an event the scan cut off, typed as nothing on its own because
     #    it is short, must not be swallowed by the normal segment next to it: step 2 gives it back to its event)
     k = 0
@@ -280,7 +320,7 @@ def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.
             m = segment_evidence(pd, segs[k]["a"], segs[k + 1]["b"], sample_sd, baf_sd)
             if m is not None:
                 segs = segs[:k] + [m] + segs[k + 2:]
-                typed = typed[:k] + [type_segment(m, p, L1, L3, use_het=use_het)[0]] + typed[k + 2:]
+                typed = typed[:k] + [T(m)] + typed[k + 2:]
                 continue
         k += 1
     # 2. a typed segment and an untyped neighbour at the same level
@@ -298,7 +338,7 @@ def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.
             if kind in ("loh", "roh"):
                 continue
             m = segment_evidence(pd, a["a"], b["b"], sample_sd, baf_sd)
-            if m is None or type_segment(m, p, L1, L3, use_het=use_het)[0] != kind:
+            if m is None or T(m) != kind:
                 continue
             segs = segs[:k] + [m] + segs[k + 2:]
             typed = typed[:k] + [kind] + typed[k + 2:]
@@ -321,7 +361,7 @@ def merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, max_gap_frac=0.
                 if typed[i] in ("loh",) and finite(segs[i]["d"]) and finite(segs[j]["d"]) and abs(segs[i]["d"] - segs[j]["d"]) > 0.04:
                     continue
                 m = segment_evidence(pd, segs[i]["a"], segs[j]["b"], sample_sd, baf_sd)
-                if m is None or type_segment(m, p, L1, L3, use_het=use_het)[0] != typed[i]:
+                if m is None or T(m) != typed[i]:
                     continue
                 segs = segs[:i] + [m] + segs[j + 1:]
                 typed = typed[:i] + [typed[i]] + typed[j + 1:]
@@ -403,6 +443,9 @@ def call_one(ctx, i, p, L1, L3):
     xy = base == "XY"
     chroms = [c for c in C.chroms if c in ctx.tracks and c != "chrY"]
     noise = sample_noise(ctx, i, [c for c in chroms if c != "chrX"] or chroms)
+    d0, d_spread, chrom_med, s_chrom = baseline_split(ctx, i, chroms, baf_sd, sample_sd)
+    base = (d0, d_spread, s_chrom)
+    xtr = next(((a, b) for name, c, a, b, why in ctx.artefacts if name == "X-transposed region"), None)
     events, rohs = [], []
     roh_bp_total, probed_total = 0, 0
     for chrom in chroms:
@@ -412,21 +455,25 @@ def call_one(ctx, i, p, L1, L3):
             l = np.asarray(ctx.tracks[chrom]["lrr_med"][i], dtype=float)
             x_base = float(np.nanmedian(l)) if np.isfinite(l).any() else 0.0
         use_het = not (is_x and xy)
-        segs, pd = call_chromosome(ctx, i, chrom, p, noise, x_base=x_base, use_het=use_het, sample_sd=sample_sd, baf_sd=baf_sd)
+        segs, pd = call_chromosome(ctx, i, chrom, p, noise, x_base=x_base, use_het=use_het, sample_sd=sample_sd, baf_sd=baf_sd, d0=d0)
         probed = probed_spans(G, chrom, pd["pos"], pd["keep"])
         if not is_x:
             probed_total += max(probed["chrom"][1] - probed["chrom"][0], 0)
         min_bp = int(p["min_mb"] * 1e6)
-        segs = merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd)
+        segs = merge_typed(segs, pd, p, L1, L3, use_het, sample_sd, baf_sd, base=base)
         for s in segs:
-            kind, f, f_lrr, f_baf, notes = type_segment(s, p, L1, L3, use_het=use_het)
+            span = span_class(G, chrom, s["start"], s["end"], probed, p)
+            kind, f, f_lrr, f_baf, notes = type_segment(s, p, L1, L3, use_het=use_het, base=base, span=span)
             if not kind:
                 continue
             if extent(s, pd["pos"]) < min_bp or s["n_probes"] < p["min_probes"]:
                 continue
-            span = span_class(G, chrom, s["start"], s["end"], probed, p)
+            if kind == "roh" and (s["end"] - s["start"] + 1) < ROH["event_bp"] and span == "stretch":
+                continue                                          # a run of homozygosity under 10 Mb is a run, not an event (roh.all.tsv has it)
             if is_x and span == "whole" and kind in ("gain", "loss"):
                 continue                                          # a whole X gained or lost is the sex step's call
+            if is_x and xy and xtr and min(s["end"], xtr[1]) - max(s["start"], xtr[0]) > 0.5 * (s["end"] - s["start"] + 1):
+                continue                                          # the X-transposed region reads as two copies in a man
             const = finite(f) and f >= p["const_f"]
             if s["n_het"] < p["n_het_min"] and kind in ("gain", "loss", "loh"):
                 notes.append("thin: %d heterozygous calls" % s["n_het"])
@@ -473,7 +520,7 @@ def call_one(ctx, i, p, L1, L3):
                                n_called=NA, lrr=num(sx.get("x_lrr" if chrom == "chrX" else "y_lrr", "")), lrr_se=np.nan, d=num(sx.get("d_x", "")) if chrom == "chrX" else np.nan, d_llr=np.nan, het_ratio=np.nan,
                                source="sex", artefact=NA, note=sx.get("mosaic", NA), qc_pass=q.get("pass", NA), sample_flags=q.get("flags", NA)))
     f_roh = roh_bp_total / probed_total if probed_total else np.nan
-    return dict(sample=name, events=events, rohs=rohs, f_roh=f_roh, complement=sx.get("complement", NA), sex_karyotype=sx.get("karyotype", NA), noise=noise)
+    return dict(sample=name, events=events, rohs=rohs, f_roh=f_roh, complement=sx.get("complement", NA), sex_karyotype=sx.get("karyotype", NA), noise=noise, baseline=dict(d0=d0, s0=d_spread, s_chrom=s_chrom))
 
 
 def sex_events(sx):
@@ -577,12 +624,13 @@ def run_events(out, cache_dir=None, threads=1, params=None, figures="flagged", l
         kar = karyotype_string([dict(e, constitutional=bool(e["constitutional"])) for e in evs], r["complement"] if r["complement"] != NA else "", r["sex_karyotype"], order)
         n_ev[r["sample"]] = len(evs)
         kar_rows.append(dict(sample=r["sample"], complement=r["complement"], karyotype=kar, n_events=len(evs), n_roh=len(r["rohs"]), f_roh=r["f_roh"],
-                             noise_lrr=r["noise"][0], noise_d=r["noise"][1][1], noise_het=r["noise"][2], qc_pass=qc[r["sample"]]["pass"], flags=qc[r["sample"]]["flags"]))
+                             noise_lrr=r["noise"][0], noise_d=r["noise"][1][1], noise_het=r["noise"][2], baseline_d=r["baseline"]["d0"], baseline_d_sd=r["baseline"]["s0"], chrom_level_sd=r["baseline"]["s_chrom"],
+                             qc_pass=qc[r["sample"]]["pass"], flags=qc[r["sample"]]["flags"]))
     for s in C.samples:
         if s not in n_ev:
-            kar_rows.append(dict(sample=s, complement=NA, karyotype=NA, n_events=NA, n_roh=NA, f_roh=np.nan, noise_lrr=np.nan, noise_d=np.nan, noise_het=np.nan, qc_pass=qc[s]["pass"], flags=qc[s]["flags"]))
+            kar_rows.append(dict(sample=s, complement=NA, karyotype=NA, n_events=NA, n_roh=NA, f_roh=np.nan, noise_lrr=np.nan, noise_d=np.nan, noise_het=np.nan, baseline_d=np.nan, baseline_d_sd=np.nan, chrom_level_sd=np.nan, qc_pass=qc[s]["pass"], flags=qc[s]["flags"]))
     kar_rows.sort(key=lambda r: C.samples.index(r["sample"]))
-    write_tsv(os.path.join(edir, "karyotypes.tsv"), ["sample", "complement", "karyotype", "n_events", "n_roh", "f_roh", "noise_lrr", "noise_d", "noise_het", "qc_pass", "flags"], kar_rows, nd=4)
+    write_tsv(os.path.join(edir, "karyotypes.tsv"), ["sample", "complement", "karyotype", "n_events", "n_roh", "f_roh", "noise_lrr", "noise_d", "noise_het", "baseline_d", "baseline_d_sd", "chrom_level_sd", "qc_pass", "flags"], kar_rows, nd=4)
     # the event-count flag
     counts = np.array([n_ev[s] for s in C.samples if s in n_ev], dtype=float)
     updates = {}
@@ -601,8 +649,10 @@ def run_events(out, cache_dir=None, threads=1, params=None, figures="flagged", l
     for e in ev_rows:
         k = "%s %s%s" % (e["type"], e["span"], "" if e["constitutional"] else " mosaic")
         by_type[k] = by_type.get(k, 0) + 1
+    n_art = sum(1 for e in ev_rows if e["artefact"] != NA)
+    n_art_lrr_only = sum(1 for e in ev_rows if e["artefact"] != NA and e["type"] in ("gain", "loss") and not finite(e["f_baf"]))
     summary = dict(samples=C.n_samples, called=len(passing), events=len(ev_rows), samples_with_events=len({e["sample"] for e in ev_rows}), by_type=by_type, roh_runs=len(roh_rows),
-                   roh_events=sum(1 for x in roh_rows if x["is_event"]), calibration=calib, event_count_cut=cut, params=p, seconds=time.time() - t0)
+                   roh_events=sum(1 for x in roh_rows if x["is_event"]), in_artefact_regions=n_art, in_artefact_regions_without_baf=n_art_lrr_only, calibration=calib, event_count_cut=cut, params=p, seconds=time.time() - t0)
     write_json(summary, os.path.join(edir, "summary.json"))
     log_fn("%d events on %d samples (%s); %d runs of homozygosity; one-copy LRR %.3f, three-copy %.3f (%s)" % (
         len(ev_rows), summary["samples_with_events"], ", ".join("%s %d" % kv for kv in sorted(by_type.items())) or "none", len(roh_rows), calib["one_copy_lrr"], calib["three_copies_lrr"], calib["three_copies_source"]), "events")

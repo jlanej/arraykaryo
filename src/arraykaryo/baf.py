@@ -33,11 +33,11 @@ MAX_FIT = 4000      # heterozygous calls used by a fit (an evenly spaced subsamp
 COARSE = D_GRID[::5]
 
 
-def fit_d(baf, sigma=None, grid=D_GRID):
+def fit_d(baf, sigma=None, grid=D_GRID, d_ref=0.0):
     """The maximum-likelihood d of one set of heterozygous-call BAFs with a shared band SD. sigma given: the sample's band SD
     (from its own heterozygous calls); sigma None: fitted jointly on a grid. Returns (d, sigma, llr) with llr the log-likelihood
-    ratio against d = 0 (0 when there are fewer than 4 values; scaled to the full count when a subsample was fitted). The
-    search is coarse (every fifth grid point) then fine around the best."""
+    ratio against d = d_ref (0 by default; a sample's baseline split otherwise), 0 when there are fewer than 4 values, scaled
+    to the full count when a subsample was fitted. The search is coarse (every fifth grid point) then fine around the best."""
     u = fold(np.asarray(baf, dtype=np.float64))
     u = u[np.isfinite(u)]
     n_all = u.size
@@ -58,11 +58,11 @@ def fit_d(baf, sigma=None, grid=D_GRID):
         ll = loglik_grid(u, sigma, COARSE)
         d0 = float(COARSE[int(np.argmax(ll))])
     fine = grid[(grid >= d0 - 0.012) & (grid <= d0 + 0.012)]
-    if fine.size == 0 or fine[0] > 0.0:
-        fine = np.concatenate([[0.0], fine])
+    fine = np.unique(np.concatenate([[float(d_ref)], fine]))
     ll = loglik_grid(u, sigma, fine)
     k = int(np.argmax(ll))
-    return float(fine[k]), float(sigma), float((ll[k] - ll[0]) * scale)
+    ref = int(np.argmin(np.abs(fine - d_ref)))
+    return float(fine[k]), float(sigma), float((ll[k] - ll[ref]) * scale)
 
 
 def d_em_windows(u, valid, sigma, iters=12, eps=EPS):

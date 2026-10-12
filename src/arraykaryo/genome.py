@@ -41,6 +41,7 @@ ARTEFACT_BANDS = (
     ("MHC", "chr6", "p22.1", "p21.32", "the major histocompatibility complex: dense structural variation; probe clusters shift with the haplotype"),
     ("8p23.1 inversion", "chr8", "p23.1", "p23.1", "a common inversion polymorphism flanked by segmental duplications; copy-number-variable flanks"),
     ("17q21.31 inversion", "chr17", "q21.31", "q21.31", "the H1/H2 inversion polymorphism (MAPT) with copy-number-variable flanks"),
+    ("X-transposed region", "chrX", "q21.31", "q21.32", "99% identical to a stretch of Yp: in a man its probes read the X and the Y copies (two copies, heterozygous-looking calls)"),
 )
 PERICENTROMERIC_BP = 2_000_000     # each side of the centromere
 SUBTELOMERIC_BP = 1_000_000        # at each chromosome end
