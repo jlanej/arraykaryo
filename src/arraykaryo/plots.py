@@ -512,3 +512,119 @@ def draw_sample_figures(out, cache_dir, names, threads=1, log_fn=None):
         with ProcessPoolExecutor(max_workers=threads) as ex:
             return sum(ex.map(_figures_worker, jobs))
     return sum(_figures_worker(j) for j in jobs)
+
+
+# -------------------------------------------------------------------------------------------------------- cohort figures
+
+def fig_landscape(out, events, G, samples_order, max_rows=120):
+    """report/figures/landscape: every chromosome across, one row per sample with an event; each event a bar coloured by its
+    type, thick when constitutional, thin when mosaic; above, the number of events per chromosome by type."""
+    fdir = os.path.join(out, "report", "figures")
+    os.makedirs(fdir, exist_ok=True)
+    chroms = [c for c in G.chroms if c != "chrM"]
+    off, total = {}, 0.0
+    for c in chroms:
+        off[c] = total
+        total += G.length[c] / 1e6
+    with_ev = [s for s in samples_order if any(e["sample"] == s for e in events)]
+    shown = with_ev[:max_rows]
+    fig, (ax_c, ax) = plt.subplots(2, 1, figsize=(260 * MM, (45 + 2.2 * max(len(shown), 8)) * MM), gridspec_kw=dict(height_ratios=[1.2, max(len(shown), 8) / 10.0], hspace=0.12), sharex=True)
+    counts = {t: np.zeros(len(chroms)) for t in TYPE_COLOUR}
+    for e in events:
+        if e["chrom"] in off:
+            counts[e["type"]][chroms.index(e["chrom"])] += 1
+    width = np.array([G.length[c] / 1e6 for c in chroms]) * 0.8
+    base = np.zeros(len(chroms))
+    centres = np.array([off[c] + G.length[c] / 2e6 for c in chroms])
+    for t in ("gain", "loss", "loh", "roh"):
+        ax_c.bar(centres, counts[t], width=width, bottom=base, color=TYPE_COLOUR[t], label=TYPE_NAME[t], lw=0)
+        base += counts[t]
+    ax_c.set_ylabel("events")
+    ax_c.legend(frameon=False, ncol=4, fontsize=6, loc="upper right")
+    ax_c.set_title("Events per chromosome, and one row per sample with an event (%d of %d samples with events shown)" % (len(shown), len(with_ev)), fontsize=9, loc="left")
+    for k, c in enumerate(chroms):
+        if k % 2:
+            for a in (ax_c, ax):
+                a.axvspan(off[c], off[c] + G.length[c] / 1e6, color=PAL["band"], lw=0, zorder=0)
+    for r, s in enumerate(shown):
+        y = len(shown) - r
+        for e in events:
+            if e["sample"] != s or e["chrom"] not in off:
+                continue
+            x0, x1 = off[e["chrom"]] + int(e["start"]) / 1e6, off[e["chrom"]] + int(e["end"]) / 1e6
+            ax.plot([x0, max(x1, x0 + 1.5)], [y, y], color=TYPE_COLOUR.get(e["type"], PAL["lrr"]), lw=3.5 if e["constitutional"] == "1" else 1.6, solid_capstyle="butt")
+    ax.set_yticks(range(1, len(shown) + 1))
+    ax.set_yticklabels(shown[::-1], fontsize=5)
+    ax.set_ylim(0.3, len(shown) + 0.7)
+    ax.set_xlim(0, total)
+    ax.set_xticks(centres)
+    ax.set_xticklabels([c[3:] for c in chroms], fontsize=6)
+    ax.set_xlabel("chromosome")
+    return save(fig, os.path.join(fdir, "landscape"), "The landscape of events",
+                "Top: the number of events per chromosome, stacked by type. Below: one row per sample with an event, each event a bar from its start to its end, coloured by type, thick when constitutional and thin when mosaic.",
+                [("vermillion", "gain"), ("blue", "loss"), ("reddish purple", "copy-neutral LOH"), ("orange", "run of homozygosity"), ("thick bar", "constitutional"), ("thin bar", "mosaic")])
+
+
+def fig_patterns(out):
+    """report/figures/patterns: what each event kind looks like on an array - idealised LRR and BAF tracks with array noise
+    (LRR SD 0.15, BAF SD 0.04) for a constitutional trisomy, a mosaic gain, a mosaic loss, a mosaic copy-neutral LOH, a run of
+    homozygosity, 47,XXY and a mosaic loss of Y. No data: every point is simulated from the expected values."""
+    from .baf import d_from_f
+    fdir = os.path.join(out, "report", "figures")
+    os.makedirs(fdir, exist_ok=True)
+    rng = np.random.default_rng(7)
+    n = 1200
+    x = np.linspace(0, 100, n)
+    inside = (x > 35) & (x < 65)
+    levels = dict(one=-0.55, three=0.35)
+    cards = [("constitutional trisomy", "gain", 1.0), ("mosaic gain, 30% of cells", "gain", 0.3), ("mosaic loss, 30% of cells", "loss", 0.3),
+             ("mosaic copy-neutral LOH, 40% of cells", "loh", 0.4), ("run of homozygosity (constitutional)", "roh", 1.0), ("47,XXY (whole X; two X's with a Y)", "xxy", 1.0),
+             ("mosaic loss of Y, 50% of cells", "loy", 0.5)]
+    fig, axes = plt.subplots(2, len(cards), figsize=(275 * MM, 70 * MM), sharex=True, gridspec_kw=dict(hspace=0.15, wspace=0.25))
+    for k, (title, kind, f) in enumerate(cards):
+        ax_l, ax_b = axes[0, k], axes[1, k]
+        lrr = rng.normal(0, 0.15, n)
+        het = rng.random(n) < 0.3
+        baf = np.where(het, 0.5, rng.choice([0.0, 1.0], n)) + rng.normal(0, 0.04, n)
+        if kind == "gain":
+            lrr[inside] += levels["three"] * (f if f < 1 else 1.0)
+            d = d_from_f(f, "gain") if f < 1 else 1 / 6
+            baf[inside & het] = 0.5 + d * rng.choice([-1, 1], (inside & het).sum()) + rng.normal(0, 0.04, (inside & het).sum())
+        elif kind == "loss":
+            lrr[inside] += levels["one"] * f
+            d = d_from_f(f, "loss")
+            baf[inside & het] = 0.5 + d * rng.choice([-1, 1], (inside & het).sum()) + rng.normal(0, 0.04, (inside & het).sum())
+        elif kind == "loh":
+            d = d_from_f(f, "loh")
+            baf[inside & het] = 0.5 + d * rng.choice([-1, 1], (inside & het).sum()) + rng.normal(0, 0.04, (inside & het).sum())
+        elif kind == "roh":
+            baf[inside & het] = rng.choice([0.0, 1.0], (inside & het).sum()) + rng.normal(0, 0.04, (inside & het).sum())
+            het = het & ~inside
+        elif kind == "xxy":
+            lrr = rng.normal(0, 0.15, n)                                         # two X's: LRR at the two-copy level, heterozygous calls present
+            ax_l.text(50, 0.95, "X: two copies, heterozygous\nY: present (LRR near 0)", ha="center", va="top", fontsize=6)
+        elif kind == "loy":
+            lrr = rng.normal(-0.55 * 1.0, 0.25, n)                              # the Y at half the male level on the compressed scale
+            het = np.zeros(n, bool)
+            baf = rng.choice([0.0, 1.0], n) + rng.normal(0, 0.04, n)
+            ax_l.text(50, 0.95, "Y level halfway between\nthe male and the absent mode", ha="center", va="top", fontsize=6)
+        ax_l.scatter(x, lrr, s=1, c=PAL["lrr"], lw=0, rasterized=True)
+        for v, col in ((0, PAL["ref"]), (levels["one"], PAL["loss"]), (levels["three"], PAL["gain"])):
+            ax_l.axhline(v, color=col, lw=0.5, ls=":")
+        ax_b.scatter(x[~het], np.clip(baf[~het], -0.02, 1.02), s=0.8, c=PAL["baf"], lw=0, rasterized=True)
+        ax_b.scatter(x[het], np.clip(baf[het], -0.02, 1.02), s=1.5, c=PAL["het"], lw=0, rasterized=True)
+        ax_b.axhline(0.5, color=PAL["ref"], lw=0.5, ls=":")
+        if kind in ("gain", "loss", "loh", "roh"):
+            for a in (ax_l, ax_b):
+                a.axvspan(35, 65, color=TYPE_COLOUR[kind], alpha=0.1, lw=0)
+        ax_l.set_ylim(-1.2, 1.0)
+        ax_b.set_ylim(-0.02, 1.02)
+        ax_l.set_title(title, fontsize=7)
+        if k == 0:
+            ax_l.set_ylabel("LRR")
+            ax_b.set_ylabel("BAF")
+        ax_b.set_xlabel("position (shaded: the event)", fontsize=6)
+        ax_l.tick_params(labelsize=6), ax_b.tick_params(labelsize=6)
+    return save(fig, os.path.join(fdir, "patterns"), "Pattern cards: what each event looks like on an array",
+                "Idealised LRR (dotted: two, one and three copies) and BAF (green at heterozygous calls) for each kind of event, simulated with typical array noise. A gain lifts the LRR and splits the heterozygous band towards 1/3 and 2/3 (fully for a trisomy, less for a mosaic); a loss lowers the LRR and splits the band outward; a copy-neutral LOH leaves the LRR flat and splits the band; a run of homozygosity has no heterozygous calls and a flat LRR; 47,XXY shows an X at two copies with heterozygous calls and a Y present; a mosaic loss of Y sits between the male and the absent Y level.",
+                [("dark grey", "LRR"), ("green", "BAF at heterozygous calls"), ("light grey", "BAF at homozygous calls")])

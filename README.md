@@ -7,8 +7,8 @@ homozygous, in every cell or in part of them - with runs of homozygosity, each w
 self-contained report. The array sibling of [triokaryo](https://github.com/jlanej/triokaryo), which reads the same
 events from whole-genome sequencing of parent-offspring trios.
 
-**Status: 0.4.0 - milestones 1 to 4 of [PROMPT.md](PROMPT.md).** `inspect`, `mock`, `extract`, `qc`, `sex`, `pedigree` and `events`
-work and are tested on the mock; `report` and `run` are next. Methods and every threshold with its source:
+**Status: 0.5.0 - milestones 1 to 5 of [PROMPT.md](PROMPT.md): the whole chain works and is tested on the mock.** Milestone 6, the
+public example validated and documented, is next. Methods and every threshold with its source:
 [docs/METHODS.md](docs/METHODS.md); every file and column: [docs/OUTPUT.md](docs/OUTPUT.md); timings: [benchmarks/](benchmarks/README.md).
 
 ## What goes in
@@ -19,12 +19,14 @@ are recognised from the contig lengths. Optionally a sample sheet (reported sex,
 `#kid dad mom kid_sex dad_sex mom_sex` form; both are checked against what the genotypes say, never trusted over them.
 
 ```bash
+arraykaryo run --bcf cohort.bcf --out out --threads 8 --sample-sheet samples.tsv --pedigree trios.tsv   # everything below, one log
 arraykaryo inspect cohort.bcf                                   # samples, contigs and assembly, fields, the conventions seen; refuses an export without GT/LRR/BAF
 arraykaryo extract --bcf cohort.bcf --out out --threads 8       # one pass into out/cache: per-chromosome arrays of GT, LRR and BAF, a probe table, a manifest
 arraykaryo qc --out out --sample-sheet samples.tsv --threads 8  # probe QC, sample QC (pass or flagged with the reason), the GC-wave correction, the cohort reference
 arraykaryo sex --out out                                        # the sex-chromosome complement of every sample, mosaics included, against the reported sex
 arraykaryo pedigree --out out --pedigree trios.tsv              # kinship and IBS0 of every pair, the families they imply, the check against the given pedigree
 arraykaryo events --out out --threads 8                         # near-chromosomal events and runs of homozygosity per sample, cell fractions, karyotype strings, figures
+arraykaryo report --out out                                     # the cohort page, per-sample pages, the guide, the digest (self-contained HTML)
 arraykaryo mock --out mock_out                                  # a simulated export with families, planted events and QC failures, and truth.json
 ```
 
@@ -33,7 +35,8 @@ arraykaryo mock --out mock_out                                  # a simulated ex
 `out/cache/` (the extraction), `out/qc/` (probes.tsv, samples.tsv, the correction, figures), `out/sex/` (sex.tsv, the X-against-Y
 figure, X and Y tracks of every sample not plainly XX or XY), `out/pedigree/` (relatedness.tsv, families.tsv, the inferred
 pedigree, check.tsv, the kinship-against-IBS0 figure), `out/events/` (events.all.tsv, roh.all.tsv, karyotypes.tsv, the
-genome-wide and per-chromosome figures of every sample with an event or a flag); `report` follows. Every file and
+genome-wide and per-chromosome figures of every sample with an event or a flag), `out/report/` (index.html, samples/, guide.html,
+digest.html). Every file and
 column: [docs/OUTPUT.md](docs/OUTPUT.md).
 
 ## Development

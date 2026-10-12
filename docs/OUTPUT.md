@@ -90,3 +90,11 @@ event-count cut, the parameters. `windows/<chrom>.npz` and `windows/<chrom>.<tra
 spans) and the tracks for every sample (lrr_med, d, n_het, het_ratio, n_called, n_lrr; samples x windows).
 
 `figures/<sample>/genome.png` and `chr_<chrom>.png` (with `.txt` sidecars): for samples with an event or a flag.
+
+## DIR/report/ (`arraykaryo report`)
+
+`index.html` (the cohort page), `samples/<sample>.html` (flagged samples and samples with events; `--pages all`),
+`guide.html` (every column, colour and rule; the pattern cards), `digest.html` with `digest.tsv` (rank, sample, event in
+words, chrom, start, end, size_mb, span, type, f, f_lrr, f_baf, karyotype, note) and `digest_left_out.tsv` (the same with
+`left_out`, the reason). `figures/landscape`, `figures/froh`, `figures/patterns`. All pages are self-contained (figures
+embedded) and open from a file:// URL.

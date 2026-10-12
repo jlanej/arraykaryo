@@ -19,10 +19,7 @@ import sys
 from . import __version__
 from .util import log
 
-TODO = {
-    "report": "the cohort report and the per-sample pages (PROMPT.md, section 4.6)",
-    "run": "extract, qc, sex, pedigree, events and report in one go (PROMPT.md, section 4.8)",
-}
+TODO = {}
 
 
 def cmd_inspect(a):
@@ -98,6 +95,67 @@ def cmd_events(a):
     return 0
 
 
+def cmd_report(a):
+    from .report import run_report
+    from .util import is_done
+    if is_done(a.out, "report") and not a.redo:
+        log("report is done (--redo to repeat)", "report")
+        return 0
+    run_report(a.out, cache_dir=cache_dir(a), pages=a.pages, top=a.top, digest_min_mb=a.digest_min_mb, digest_min_f=a.digest_min_f, threads=a.threads)
+    return 0
+
+
+def cmd_run(a):
+    """The chain with one log; refuses to proceed past a step that failed; prints where every table and page is at the end."""
+    import time
+    from .util import is_done
+    t0 = time.time()
+    steps = ["extract", "qc", "sex", "pedigree", "events", "report"]
+    os.makedirs(a.out, exist_ok=True)
+    for step in steps:
+        if is_done(a.out, step) and not a.redo and step != "extract":
+            log("%s is done (--redo to repeat)" % step, "run")
+            continue
+        t1 = time.time()
+        log("--- %s" % step, "run")
+        try:
+            if step == "extract":
+                cmd_extract(a)
+            elif step == "qc":
+                from .qc import run_qc
+                run_qc(a.out, cache_dir=cache_dir(a), sample_sheet=a.sample_sheet, exclude_probes=a.exclude_probes, exclude_samples=a.exclude_samples, threads=a.threads)
+            elif step == "sex":
+                from .sex import run_sex
+                run_sex(a.out, cache_dir=cache_dir(a), threads=a.threads)
+            elif step == "pedigree":
+                from .pedigree import run_pedigree
+                run_pedigree(a.out, cache_dir=cache_dir(a), pedigree=a.pedigree, sample_sheet=a.sample_sheet, threads=a.threads)
+            elif step == "events":
+                from .events import run_events
+                run_events(a.out, cache_dir=cache_dir(a), threads=a.threads, params=dict(min_mb=a.min_mb, window=a.window), figures=a.figures)
+            elif step == "report":
+                from .report import run_report
+                run_report(a.out, cache_dir=cache_dir(a), pages=a.pages, top=a.top, digest_min_mb=a.digest_min_mb, digest_min_f=a.digest_min_f, threads=a.threads)
+        except SystemExit as e:
+            log("%s failed: %s" % (step, e), "run")
+            return 1
+        except Exception as e:                                             # noqa: BLE001 - the chain stops at the failed step with the reason
+            import traceback
+            traceback.print_exc()
+            log("%s failed: %s; the chain stops here" % (step, e), "run")
+            return 1
+        log("%s done in %.1f s" % (step, time.time() - t1), "run")
+    log("all done in %.1f s. Outputs under %s:" % (time.time() - t0, a.out), "run")
+    for line in ("cache/                 the extraction (manifest.json, probes.tsv, samples.txt, per-chromosome arrays)",
+                 "qc/samples.tsv         sample QC with pass/flags; qc/probes.tsv probe QC; qc/figures/",
+                 "sex/sex.tsv            the complement of every sample; sex/figures/",
+                 "pedigree/              relatedness.tsv, families.tsv, pedigree.inferred.tsv, check.tsv (with --pedigree), figures/",
+                 "events/                events.all.tsv, roh.all.tsv, karyotypes.tsv, figures/<sample>/",
+                 "report/index.html      the cohort page; report/samples/<sample>.html; report/guide.html; report/digest.html (+ digest.tsv)"):
+        log("  " + line, "run")
+    return 0
+
+
 def cmd_todo(a):
     sys.exit("arraykaryo %s is not implemented yet: %s" % (a.cmd, TODO[a.cmd]))
 
@@ -163,11 +221,26 @@ def build_parser():
     ev.add_argument("--window", type=int, default=100, help="probes per window (default 100)")
     ev.add_argument("--figures", default="flagged", choices=["flagged", "all", "none"], help="figures for samples with an event or a flag (default), for all, or none")
     ev.set_defaults(func=cmd_events)
-    for name, what in TODO.items():
-        t = sub.add_parser(name, help="(not yet implemented) " + what)
-        add_common(t, bcf=(name == "run"))
-        t.set_defaults(func=cmd_todo)
+    rp = sub.add_parser("report", help="the cohort page, per-sample pages, the guide and the digest (self-contained HTML)")
+    add_common(rp)
+    add_report_args(rp)
+    rp.set_defaults(func=cmd_report)
+    r = sub.add_parser("run", help="extract, qc, sex, pedigree, events and report in one go")
+    add_common(r, bcf=True)
+    r.add_argument("--sample-sheet", default=""), r.add_argument("--exclude-probes", default=""), r.add_argument("--exclude-samples", default="")
+    r.add_argument("--pedigree", default="", help="a pedigree to check (the house form, a PLINK .fam, or any table naming the ids)")
+    r.add_argument("--min-mb", type=float, default=2.0), r.add_argument("--window", type=int, default=100)
+    r.add_argument("--figures", default="flagged", choices=["flagged", "all", "none"])
+    add_report_args(r)
+    r.set_defaults(func=cmd_run)
     return p
+
+
+def add_report_args(p):
+    p.add_argument("--pages", default="flagged", choices=["flagged", "all"], help="per-sample pages for flagged samples and samples with events (default), or for all")
+    p.add_argument("--top", type=int, default=25, help="events on the digest (default 25)")
+    p.add_argument("--digest-min-mb", type=float, default=10.0, help="the smallest stretch on the digest (default 10 Mb)")
+    p.add_argument("--digest-min-f", type=float, default=0.1, help="the smallest mosaic cell fraction on the digest for an arm or stretch (default 0.1)")
 
 
 def main(argv=None):

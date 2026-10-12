@@ -83,9 +83,3 @@ def test_inspect_refuses_an_export_without_lrr(tmp_path, capsys):
     p = write_tiny(str(tmp_path / "nolrr.vcf.gz"), with_lrr=False)
     assert main(["inspect", p]) == 2
     assert "REFUSED" in capsys.readouterr().out
-
-
-def test_unimplemented_commands_say_where_they_are_specified(tmp_path):
-    with pytest.raises(SystemExit) as e:
-        main(["report", "--out", str(tmp_path)])
-    assert "PROMPT.md" in str(e.value)

@@ -26,3 +26,5 @@ repository.
 | 0.4.0 | events: one sample's calls on chr1 (1,939 windows), after | - | 1 | 0.30 s | - |
 | 0.4.0 | events with figures for 22 samples | 60 x 82k | 4 | 5.7 s | - |
 | 0.4.0 | pytest (28 tests) | - | - | 47 s | - |
+| 0.5.0 | run (extract to report, figures for 22 samples, 22 sample pages) | 60 x 82k | 4 | 17 s | 0.28 GB |
+| 0.5.0 | pytest (30 tests, the end-to-end run included) | - | - | 65 s | - |

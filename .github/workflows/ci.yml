@@ -58,10 +58,13 @@ jobs:
           context: .
           load: true
           tags: arraykaryo:ci
-      - name: Test the image
+      - name: Test the image on the mock (mock, run, the report)
         run: |
           docker run --rm arraykaryo:ci --version
-          docker run --rm arraykaryo:ci inspect --help > /dev/null
+          mkdir -p ci_out && chmod 777 ci_out
+          docker run --rm -v "$PWD/ci_out:/data" arraykaryo:ci mock --out /data/mock --samples 40 --seed 3
+          docker run --rm -v "$PWD/ci_out:/data" arraykaryo:ci run --bcf /data/mock/mock.bcf --out /data/out --threads 2 --sample-sheet /data/mock/sample_sheet.tsv --pedigree /data/mock/pedigree.tsv
+          test -s ci_out/out/report/index.html && test -s ci_out/out/events/events.all.tsv && grep -c . ci_out/out/events/karyotypes.tsv
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3

@@ -304,6 +304,31 @@ chromosome, so one thread); calls 0.30 s of one core per sample-chromosome of 1,
 segmentation scan and the merge and fitting d on at most 4,000 heterozygous calls (the SE of d is then under 0.001).
 Projected for the example: about 10 minutes with 8 threads.
 
+## Report (`report.py`)
+
+`report/index.html`, one self-contained page per cohort (every figure embedded as base64, readable from a file:// URL):
+tiles (samples; passing; flagged by reason; families; samples with events; samples not plainly XX or XY), the QC section
+(the metric distributions with the thresholds, the GC wave before and after, the thresholds with their sources, the sortable
+and filterable sample table), the sex section (the X-against-Y figure, the table of every sample not plainly XX or XY or
+disagreeing with its reported sex), the pedigree section (families, the check against the given pedigree with the
+disagreeing rows, the kinship-against-IBS0 figure), the events section (the landscape - events per chromosome, one row per
+sample with an event - and the sortable table with every number and the event in words, linked to the sample pages), the ROH
+section (F_ROH, the runs of 5 Mb or more), and the samples set aside (hard QC failures; noise, event-count and duplicate
+warnings), like triokaryo's cohort guards. Per-sample pages (`report/samples/<sample>.html`) for flagged samples and samples
+with events (`--pages all` for every sample): the karyotype string, the QC row against the cohort medians, the complement
+and its check, the families, every event in plain words with its evidence, the figures. The guide (`report/guide.html`)
+explains every column and colour, the calling rules and the thresholds with their sources, with pattern cards of what each
+event kind looks like on an array (a constitutional trisomy, a mosaic gain, a mosaic loss, a mosaic copy-neutral LOH, a run of
+homozygosity, 47,XXY, a mosaic loss of Y), drawn from idealised tracks with array noise. The digest (`report/digest.html`,
+`digest.tsv`, `digest_left_out.tsv`) lists the largest events for hand-off, ranked as triokaryo's digest ranks: a whole
+chromosome, then an arm, then a stretch by size; an event in every cell before one in part of the cells; a change of copy
+number before a copy-neutral LOH before a run of homozygosity; the floors (stretches of 10 Mb or more, mosaics of 10% or
+more for an arm or a stretch, runs of homozygosity of 20 Mb or more, samples that pass QC) are parameters and every event
+left out is counted with its reason; each listed event carries its facts and the sample's genome-wide and chromosome
+figures. `arraykaryo run` chains extract, qc, sex, pedigree, events and report with one log, stops at a failed step, and
+prints where every table and page is. *Measured*: the default mock (60 samples, 82,000 probes) runs end to end, with
+figures and the report, in 17 s on four threads.
+
 ## References
 
 - Peiffer DA et al. (2006) High-resolution genomic profiling of chromosomal aberrations using Infinium whole-genome genotyping. Genome Res 16:1136 (LRR and BAF).
