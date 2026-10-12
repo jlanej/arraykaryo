@@ -24,15 +24,18 @@ hwe), par, intensity_only, snv, call_rate (across samples; on the Y among the sa
 samples), lrr_sd (robust, across samples), het_baf_median, hwe_p (autosomes), gentrain, cluster_sep, maf (across the
 samples), n_called. `probes.npz` holds keep, keep_gt, maf, call_rate, hwe and het_baf_median in cache order.
 
-`samples.tsv`: sample, reported_sex, batch, call_rate, het_rate (autosomal), lrr_mean (raw), lrr_sd_raw, lrr_sd (after
-correction), lrr_sd_diff (the noise SD from first differences, robust to events), baf_sd (median over chromosomes),
+`samples.tsv`: sample, reported_sex, batch, call_rate, het_rate (autosomal), lrr_mean (raw), lrr_offset (the per-sample
+median of the corrected autosomal LRR, subtracted), lrr_sd_raw, lrr_sd (after correction), lrr_sd_diff (the noise SD from
+first differences, robust to events), baf_sd (median over chromosomes), baf_sd_robust (the median of |BAF - 0.5| at
+heterozygous calls over 0.6745; the band SD the fits use),
 baf_drift, wf (PennCNV's waviness factor), gc_corr_before, gc_corr_after (the correlation of LRR with the 1-Mb GC), y_lrr_raw
 (the raw mean LRR over the non-PAR Y, the provisional Y signal), y_call_rate, sex and sex_check (added by `sex`), pass (no
 flag), hard_fail (not to be read), flags (comma-joined: excluded, call_rate, lrr_sd, lrr_sd_fail, baf_sd, baf_drift, wave,
 lrr_mean, sex_mismatch; later duplicate, unexpected_relative, event_count). Later steps add columns to this table.
 
-`correction.npz`: the GC-wave coefficients per sample (5 x samples), the batch index per sample, the GC standardisation,
-the reference per probe and per batch for every chromosome. `summary.json`: counts, every threshold with its source, the
+`correction.npz`: the GC-wave coefficients per sample (5 x samples; the intercept row is zero, the per-sample `offset`
+centres the result), the batch index per sample, the GC standardisation, the reference per probe and per batch for every
+chromosome. `summary.json`: counts, every threshold with its source, the
 cohort median and robust SD of every metric, the batches and whether a per-batch reference was used.
 
 `figures/qc_distributions`: the metrics as histograms with the thresholds. `figures/gc_wave`: LRR against the 1-Mb GC
@@ -87,7 +90,7 @@ is_event (10 Mb or more). `karyotypes.tsv`: sample, complement, karyotype (the I
 (genome fraction in runs), noise_lrr, noise_d, noise_het (the sample's window-level noise per track), qc_pass, flags (NA
 karyotype for a sample not read). `summary.json`: counts by type and class, the copy-scale calibration and its source, the
 event-count cut, the parameters. `windows/<chrom>.npz` and `windows/<chrom>.<track>.npy`: the window layout (bounds, mids,
-spans) and the tracks for every sample (lrr_med, d, n_het, het_ratio, n_called, n_lrr; samples x windows).
+spans) and the tracks for every sample (lrr_med, d, d_llr, n_het, het_ratio, n_called, n_lrr; samples x windows).
 
 `figures/<sample>/genome.png` and `chr_<chrom>.png` (with `.txt` sidecars): for samples with an event or a flag.
 

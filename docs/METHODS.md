@@ -106,6 +106,7 @@ On the Y the call rate is taken among the samples with a Y (its PAR probes among
 | call rate | called / autosomal SNV probes kept for genotypes | < 0.97 | Illumina's and MoChA's recommendation |
 | LRR SD | SD of the corrected autosomal LRR | > 0.20 flag; > 0.30 hard fail | MoChA's mosaic practice; PennCNV `filter_cnv --qclrrsd 0.3` |
 | BAF SD | SD of BAF - 0.5 at heterozygous calls, the median over the autosomes of the per-chromosome value (so one chromosome's split bands do not flag a sample) | > 0.06 | the band SD that blurs the bands (MoChA's `baf_auto` flags contamination at 0.03) |
+| BAF SD, robust | the median of \|BAF - 0.5\| at heterozygous calls over 0.6745 (a half-normal's median): the band SD the fits use, immune to mis-called genotypes, which inflate the plain SD (0.056 for a planted 0.040 on the mock) | - | - |
 | BAF drift | share of homozygous-called probes with BAF in (0.2, 0.25) or (0.75, 0.8) | > 0.002 | PennCNV's BAF_DRIFT (over every probe, filtered at 0.01) |
 | wave factor | PennCNV's waviness factor: the median absolute deviation of the 1-Mb window medians of the raw autosomal LRR from their overall median, signed by the correlation of the window medians with the window GC (PennCNV signs it against a reference wave) | abs > 0.05 | PennCNV `filter_cnv --qcwf 0.05` (`detect_cnv` warns at 0.04) |
 | LRR mean | mean raw autosomal LRR | beyond +-0.1 | a poorly normalised sample |
@@ -122,16 +123,21 @@ call rate) are flagged with their reason and nothing else is.
 
 1. *The GC wave* (Diskin 2008; MoChA's `--adjust-BAF-LRR` is the modern reference): LRR regressed on the probe's
    `INFO/GC` and on the mean GC of the probes within 500 kb (the 1-Mb window), each standardised and entered as a
-   quadratic, fitted by least squares over the autosomes on the LRR clipped to +-1 (robust to events and outliers), and the
-   fit subtracted. *Measured* on the mock: the correlation of LRR with the window GC falls from a median of 0.04-0.09 before
-   to 0.000 after; the autosomal LRR SD from 0.175 to 0.150, the planted per-sample noise.
+   quadratic, fitted by least squares over the autosomes on the LRR clipped to +-1 (robust to outliers) and on
+   *within-arm deviations* - every chromosome arm's own mean of the LRR and of the covariates is removed before the
+   products are formed - so that a whole chromosome or arm gained or lost carries no leverage on the slopes (fitted on all
+   probes, the regression absorbed a third of a planted arm gain whose arm differed in GC from the rest). The fit is
+   subtracted and the corrected LRR centred per sample on its median over the autosomes (`lrr_offset`). *Measured* on the
+   mock: the correlation of LRR with the window GC falls from a median of 0.04-0.09 before to 0.000 after on the null
+   samples; the autosomal LRR SD from 0.175 to 0.150, the planted per-sample noise.
 2. *The cohort reference*: the median corrected LRR per probe over the passing samples, per batch when every batch holds
    20 or more passing samples, else cohort-wide, subtracted. This removes the array's shared structure (the per-probe offsets
    every sample carries) exactly as triokaryo's panel does for sequencing. On the X the reference is built from the samples
    without a Y, so that one X reads as one copy on the cohort's scale; the Y keeps its GC-corrected raw level against the
    male cluster (a reference over a mixed cohort would sit between the sexes).
 3. *BAF*: clipped to [0, 1] at use; the heterozygous-call BAF is re-centred per probe by the cohort's median at that probe
-   when its shift exceeds 0.01 (MoChA's cluster adjustment), and a probe whose shift exceeds 0.05 loses its genotype.
+   when its shift exceeds 0.01 and 30 or more heterozygous calls support the median (MoChA's cluster adjustment; the median
+   of fewer calls is noise and was adding it), and a probe whose shift exceeds 0.05 loses its genotype.
 
 The corrected LRR is never written: `qc/correction.npz` holds the parameters (five coefficients per sample, the reference
 per probe and per batch) and `Correction.apply` reproduces it from the cache for any block.
@@ -226,15 +232,19 @@ sample is read with its flags beside every call.
 **Tracks per window** (`windows.py`): windows of about 100 probes pooled by probe count over the probes kept for LRR
 (a similar amount of evidence everywhere; 1,939 windows on a 196,000-probe chromosome). Per window and sample: the median
 corrected LRR; the band deviation d at heterozygous calls, the location of the symmetric two-band mixture 0.5 +- d fitted by
-maximum likelihood with the sample's own band SD (an EM with a known SD: the E-step gives each folded value's probability of
-the upper band, the M-step d; `baf.d_em_windows`), after re-centring each probe's BAF by the cohort's heterozygous median
-where it shifts by more than 0.01; and the heterozygous rate against the Hardy-Weinberg expectation at the called probes,
-2 p (1 - p) from the cohort's allele frequencies. The per-window mean of |BAF - 0.5| is biased upward by noise and is not
-used. Tracks are computed for blocks of 64 samples at once and stored (`events/windows/`).
+maximum likelihood with the sample's own robust band SD (an EM with a known SD: the E-step gives each folded value's
+probability of the upper band, the M-step d; `baf.d_em_windows`) and its log-likelihood ratio against no split; and the
+heterozygous rate against the Hardy-Weinberg expectation at the called probes, 2 p (1 - p) from the cohort's allele
+frequencies. The mixture carries a 2% uniform outlier component on [0, 0.5]: a mis-called genotype (a homozygous probe
+called heterozygous, its BAF near 0 or 1) would otherwise be explained only by a huge split and give one window a
+likelihood ratio in the tens, which fragmented every chromosome. The per-window mean of |BAF - 0.5| is biased upward by
+noise and is not used. Tracks are computed for blocks of 64 samples at once and stored (`events/windows/`).
 
 **Segmentation** (`segment.py`): the three tracks, standardised by the sample's own window-level noise (LRR from the
-first differences of the window medians, robust to events; d and the heterozygous ratio by their robust spread), are
-segmented jointly by circular binary segmentation (Olshen 2004): for every candidate segment (i, j] the statistic is the
+first differences of the window medians, robust to events; the band track as sqrt(2 x the window's log-likelihood ratio),
+at the null a half-normal, centred on its median and scaled by its robust spread - the deviation d itself has a point mass
+at 0 and no usable spread; the heterozygous ratio by its robust spread), are segmented jointly by circular binary
+segmentation (Olshen 2004): for every candidate segment (i, j] the statistic is the
 sum over tracks of the squared t-statistic of the segment's mean against the rest of the chromosome, computed for all
 pairs at once; the best segment is accepted when its statistic exceeds the 3-df chi-square quantile at 0.01 over the number
 of candidate pairs (never below 20) - a Bonferroni-style bound in place of permutations, which the cohort scale forbids - and
@@ -250,16 +260,23 @@ within two windows.
 | reading | rule |
 | --- | --- |
 | run of homozygosity | heterozygous ratio at or under 0.2 over 40 or more called probes (the calls left are errors, whatever their BAF says); LRR at one copy (under half the one-copy level) makes it a constitutional deletion, LRR up a gain without heterozygosity |
-| gain / loss | the median LRR at least 0.03 and 5 standard errors from 0 (the median's SE from the sample's own probe noise), with the band deviation significant too (d at least 0.02, log-likelihood ratio against d = 0 at least 30 over 20 or more heterozygous calls) unless the shift reaches 0.10 on its own - residual GC waves of a few hundredths survive the correction and must not become events |
+| gain / loss | the median LRR at least 0.025 and 5 standard errors from 0 (the median's SE from the sample's own probe noise), with the band deviation significant too (d at least 0.02, log-likelihood ratio against d = 0 at least 30 over 20 or more heterozygous calls) unless the shift reaches 0.10 on its own - residual GC waves of a few hundredths survive the correction and must not become events |
 | copy-neutral LOH | LRR flat, d significant |
 | nothing | everything else (a segment the noise cut) |
 
-Adjacent segments typed alike, over any short untyped piece between them (under 5 Mb or 15% of the joined span), are
-joined when their levels agree and the joined segment types the same. Floors: 2 Mb and 40 probes (`--min-mb`). A
-segment covering 90% or more of a chromosome's probed span is `whole`, of an arm's `p` or `q`, else `stretch`; a whole-X gain
-or loss is the sex step's call and is not repeated.
+Adjacent segments typed as nothing are joined without condition (a boundary between two nothings is noise), so that a
+chromosome whose every piece is a little high reads as one segment and is typed as a whole; a typed segment takes in an
+untyped neighbour at the same level when the union types the same (a sliver the scan cut off its event); adjacent segments
+typed alike, over any short untyped piece between them (under 5 Mb or 15% of the joined span), are joined when their levels
+agree and the joined segment types the same. Floors: 2 Mb (a segment's extent counts half of each gap around its first and
+last probe, where the change of copy number lies) and 40 probes (`--min-mb`). A segment covering 90% or more of a
+chromosome's probed span is `whole`, of an arm's `p` or `q`, else `stretch`; a whole-X gain or loss is the sex step's call and
+is not repeated.
 
-**Cell fraction**: from the band deviation, the primary estimate - gain f = 4d/(1-2d), loss f = 4d/(1+2d), copy-neutral LOH
+**Cell fraction**: the segment's d is fitted on all its heterozygous calls (a subsample of 4,000 beyond that) with the
+sample's robust band SD - the band SD is not fitted jointly with d, because two bands close together and one wider band are
+nearly the same mixture and a joint fit on a long segment reports small splits that are not there. From the band deviation,
+the primary estimate - gain f = 4d/(1-2d), loss f = 4d/(1+2d), copy-neutral LOH
 f = 2d (the band positions (1+f)/(2+f), 1/(2-f) and (1+f)/2 solved for f); and from the LRR on the cohort's copy scale, the
 secondary - the one-copy level from the male X against the female X (sex step; -0.53 to -0.55 on the mock, which simulates
 -0.55), the three-copy level from the median LRR of any constitutional trisomy found (0.33 on the mock, which simulates
