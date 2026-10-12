@@ -34,7 +34,7 @@ from .qc import probe_masks, read_sample_qc, update_sample_qc
 from .sex import read_sex
 from .util import NA, log, mark_done, num, read_pedigree, read_sample_sheet, write_json, write_pedigree, write_tsv
 
-PARAMS = dict(call_rate=0.98, maf=0.05, thin_bp=50_000, max_probes=60_000, dup=0.354, first=0.177, second=0.0884, third=0.0442, mie_max=0.02, mie_ratio=3.0)
+PARAMS = dict(call_rate=0.98, maf=0.05, thin_bp=50_000, max_probes=60_000, dup=0.354, first=0.177, second=0.0884, third=0.0442, mie_max=0.02, mie_ratio=3.0, mie_floor_ratio=5.0, mie_floor_min=0.003)
 CLASS_NAME = {"dup": "duplicate or monozygotic", "po": "parent-offspring", "fs": "full sibling", "1st": "first degree", "2nd": "second degree", "3rd": "third degree"}
 BLOCK = 8000
 
@@ -240,6 +240,8 @@ def run_pedigree(out, cache_dir=None, pedigree="", sample_sheet="", threads=1, p
                 others = [v for k, v in orient.items() if k != best]
                 if best != "c" or not (orient["c"] <= p["mie_max"] and min(others) >= p["mie_ratio"] * max(orient["c"], 1e-4)):
                     continue
+                if len(outlier_chroms(per_c["c"][1], orient["c"])) > 2:
+                    continue                                              # errors standing out on several chromosomes: not a trio (a grandparent, an uncle)
                 dad, mom = (a, b) if (sa == "M" or sb == "F") else (b, a)
                 if not sa and not sb:
                     dad, mom = a, b
@@ -259,6 +261,22 @@ def run_pedigree(out, cache_dir=None, pedigree="", sample_sheet="", threads=1, p
                 families.append(dict(kid=c, dad=dad, mom=mom, kind="trio", mie=orient["c"], mie_overall=per_c["c"][0], mie_other=min(others), note="; ".join(notes)))
                 used_in_trio |= {c, dad, mom}
                 mie_floor = orient["c"] if mie_floor is None else min(mie_floor, orient["c"])
+    # the cohort's Mendelian-error floor from the trios accepted so far: a trio must sit near it, not merely under the absolute cap
+    # (a grandparent or an uncle in a parent's place gives 0.01-0.05 where true trios give 0.0003 on a good array)
+    if families:
+        floor = float(np.median([f["mie"] for f in families]))
+        cut = max(p["mie_floor_ratio"] * floor, p["mie_floor_min"])
+        dropped = [f for f in families if f["mie"] > cut]
+        for f in dropped:
+            for x in (f["dad"], f["mom"]):
+                pair = (min(f["kid"], x), max(f["kid"], x))
+                if pair in reclassified:
+                    cls[pair] = "2nd" if kin[pair] < p["first"] else "fs"
+                    del reclassified[pair]
+        families = [f for f in families if f["mie"] <= cut]
+        mie_floor = floor
+        if dropped and log_fn:
+            log_fn("%d candidate trio(s) dropped: Mendelian-error rate above %.4f (%.0f x the cohort floor %.4f)" % (len(dropped), cut, p["mie_floor_ratio"], floor), "pedigree")
     for r in rel_rows:
         pair = (index_of(C, r["sample_a"]), index_of(C, r["sample_b"]))
         if pair in reclassified:
@@ -268,6 +286,8 @@ def run_pedigree(out, cache_dir=None, pedigree="", sample_sheet="", threads=1, p
         write_tsv(os.path.join(pdir, "relatedness.tsv"), ["sample_a", "sample_b", "n_probes", "kinship", "ibs0", "hethet", "class", "note"], rel_rows, nd=5)
     # the given pedigree and the sample sheet (ages) for duos
     given_rows, given_sex, _ = read_pedigree(pedigree) if pedigree else ([], {}, {})
+    from .util import read_relative_columns
+    disclosed = read_relative_columns(pedigree) if pedigree else {}
     given_parent_of = {}
     for r in given_rows:
         for par in (r["dad"], r["mom"]):
@@ -377,6 +397,10 @@ def run_pedigree(out, cache_dir=None, pedigree="", sample_sheet="", threads=1, p
             if c == "fs" and same_parents:
                 check_rows.append(dict(kid=C.samples[a], relative=C.samples[b], claimed="siblings", found=CLASS_NAME[c], kinship=kin[a, b], status="agrees", note=NA))
                 continue
+            listed = disclosed.get(frozenset((C.samples[a], C.samples[b])))
+            if listed:
+                check_rows.append(dict(kid=C.samples[a], relative=C.samples[b], claimed=listed, found=CLASS_NAME[c], kinship=kin[a, b], status="agrees" if _agree(listed, c) else "listed as %s, found %s" % (listed, CLASS_NAME[c]), note="from the table's relative columns"))
+                continue
             status = "undisclosed duplicate" if c == "dup" else "undisclosed %s pair" % CLASS_NAME[c]
             check_rows.append(dict(kid=C.samples[a], relative=C.samples[b], claimed="unrelated", found=CLASS_NAME[c], kinship=kin[a, b], status=status, note=NA))
             if c == "dup":
@@ -419,6 +443,10 @@ def run_pedigree(out, cache_dir=None, pedigree="", sample_sheet="", threads=1, p
         log_fn("figure skipped: %s" % e, "pedigree")
     mark_done(out, "pedigree", dict(seconds=time.time() - t0))
     return summary
+
+
+def _agree(listed, c):
+    return (listed == "siblings" and c in ("fs", "po")) or (listed == "second order" and c == "2nd") or (listed == "third order" and c in ("3rd", "2nd"))
 
 
 def index_of(C, name):

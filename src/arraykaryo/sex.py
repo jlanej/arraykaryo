@@ -316,6 +316,7 @@ def run_sex(out, cache_dir=None, threads=1, params=None, log_fn=log):
                 else:
                     txt = "mosaic gain of a Y in %.0f%% of cells (46,XY/47,XYY)" % (100 * fy)
                 mosaic = (mosaic + "; " if mosaic else "") + txt
+                notes.append("a Y gain read from the level alone is tentative: the Y level varies between Y haplogroups (probes deleted or duplicated on some)")
                 f = fy if not np.isfinite(f) else f
                 f_lrr = fy if not np.isfinite(f_lrr) else f_lrr
                 if fy < p["const_f"]:

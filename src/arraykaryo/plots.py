@@ -116,9 +116,10 @@ def fig_qc(out, cache, rows, T, corr, log_fn=None):
     return [p1, p2]
 
 
-def fig_sex(out, rows, summary, log_fn=None, max_labels=40):
+def fig_sex(out, rows, summary, log_fn=None, max_labels=30):
     """sex/figures/x_vs_y: the X level against the Y level, coloured by the X heterozygosity relative to the autosomes, every
-    sample not plainly XX or XY ringed and labelled (up to max_labels; the rest are in sex.tsv)."""
+    sample not plainly XX or XY ringed; labelled when its complement is not XX or XY, its check disagrees, or its mosaic is
+    in 30% of cells or more (up to max_labels; the rest are in sex.tsv)."""
     fdir = os.path.join(out, "sex", "figures")
     os.makedirs(fdir, exist_ok=True)
     x = np.array([r["x_lrr"] for r in rows], dtype=float)
@@ -149,17 +150,22 @@ def fig_sex(out, rows, summary, log_fn=None, max_labels=40):
             if v is not None and np.isfinite(v):
                 ax.axhline(v, color=PAL["ref"], lw=0.6, ls=":", zorder=1)
                 ax.text(xlo - 0.11, v, lab, ha="left", va="bottom", fontsize=7, color=PAL["ref"], bbox=dict(fc="white", ec="none", pad=1))
+        def worth(i):
+            f = rows[i]["f"]
+            big = f not in ("NA", "", None) and float(f) >= 0.3
+            return (comp[i] not in ("XX", "XY")) or (rows[i]["check"] not in ("agrees", "NA", "not read", "")) or big
+        cand = [i for i in np.flatnonzero(odd & ok) if worth(i)]
         n_lab = 0
-        for i in np.flatnonzero(odd & ok):
+        for i in cand:
             if n_lab >= max_labels:
                 break
             kar = rows[i]["karyotype"] if rows[i]["karyotype"] != "NA" else comp[i]
             rep = rows[i]["reported_sex"]
             lab = "%s %s" % (rows[i]["sample"], kar) + ((" (reported %s)" % rep) if rep != "NA" and rows[i]["check"] != "agrees" else "")
-            ax.annotate(lab, (x[i], y[i]), xytext=(5, 5 if (n_lab % 2 == 0) else -9), textcoords="offset points", fontsize=6, color=PAL["lrr"], zorder=5)
+            ax.annotate(lab, (x[i], y[i]), xytext=(5, 5 if (n_lab % 2 == 0) else -9), textcoords="offset points", fontsize=5.5, color=PAL["lrr"], zorder=5)
             n_lab += 1
-        if odd.sum() > max_labels:
-            ax.text(0.01, 0.99, "%d of %d ringed samples labelled; all are in sex.tsv" % (max_labels, odd.sum()), transform=ax.transAxes, fontsize=6, va="top")
+        if odd.sum() > n_lab:
+            ax.text(0.01, 0.99, "%d of %d ringed samples labelled (unusual complements, disagreements, mosaics of 30%% or more); all are in sex.tsv" % (n_lab, odd.sum()), transform=ax.transAxes, fontsize=6, va="top")
         ax.legend(frameon=False, loc="center right")
     xm, ym = summary["x_modes"], summary["y_modes"]
     ax.set_xlabel("X level: median corrected LRR outside the PARs")

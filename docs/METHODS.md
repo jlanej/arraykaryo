@@ -161,11 +161,24 @@ level reads as 0.5 copies; the absent mode reads as 0). With no sample of one se
 other (PennCNV's one-copy level is -0.66) and the summary says so.
 
 The complement the Y implies is the anchor, as in triokaryo's sexchrom: XY with a Y (0.5 copies or more; between 0.25 and
-0.5 the nearer complement), XX without. An X deviating from the anchor's count by a cell fraction of 0.10 or more is a
-mosaic (`mos 45,X[0.30]/46,XX`, `mos 47,XXY[0.20]/46,XY`), by 0.90 or more a constitutional aneuploidy (47,XXY, 45,X, 47,XXX,
-48,XXYY ...); a Y under one copy in a man by 0.10 or more is a mosaic loss of Y (`mos 45,X[0.50]/46,XY`), above one by
-0.10 or more a gain (47,XYY); a Y at 0.25 copies or more in an XX genome is "a Y in part of the cells (46,XX/47,XXY mosaic, or
-an XX/XY mixture)". The band deviation d at the X heterozygous calls (`baf.py`: the maximum-likelihood location of the
+0.5 the nearer complement), XX without - except that one X without heterozygosity (the heterozygous rate under 0.15 of the
+autosomal rate) is read against XY whatever the Y: a man whose cells lost the Y and a 45,X are both one X, and the Y's share
+of cells says which (*example*: two men whose lymphoblastoid lines lost the Y in 85% and 78% of cells read as 45,X/46,XY
+mosaics, not as women with an X loss). **The mosaic floors are the cohort's own**: a deviation in copies must exceed three
+robust SD of the levels of the sample's cluster (the X and the Y of the XY samples, the X of the XX samples), never under
+0.10 - on the example the X and Y levels of men spread by 0.072 and 0.075 copies (robust SD) against 0.023 for the X of
+women, so the floors are 0.21, 0.22 and 0.10; a fixed 0.10 read that spread as mosaic Y gains in 119 men. An X mosaic in an
+XX sample needs the BAF split too (d at least 0.03, the null's 95th percentile on the example, with a log-likelihood ratio of
+30 or more) unless the level change is large (0.25 or 5 robust SD); an extra X in an XY sample needs heterozygous-looking
+calls (the X heterozygous rate above 0.15 of the autosomal rate), and two fully heterozygous X's with a Y are a 47,XXY in
+every cell; a single X lost in part of the cells is not a viable state and is noted, not called. So called: an X deviating
+from the anchor's count is a mosaic (`mos 45,X[0.30]/46,XX`, `mos 47,XXY[0.20]/46,XY`), at 0.90 or more a constitutional
+aneuploidy (47,XXY, 45,X, 47,XXX, 48,XXYY ...); a Y under one copy in a man is a mosaic loss of Y (`mos 45,X[0.50]/46,XY`; a
+Y gone from every cell makes the complement X), above one a gain (47,XYY) - tentative when read from the level alone, since
+the Y level varies between Y haplogroups (probes deleted or duplicated on some); a Y at 0.25 copies or more in an XX genome
+is "a Y in part of the cells (46,XX/47,XXY mosaic, or an XX/XY mixture)". The cell fraction read is the BAF's where it is
+significant, else the level's; the two are reported with a note when they disagree by more than 0.2 (on real X losses the
+BAF's runs above the level's: the one-copy scale calibrated from men underestimates a partial loss). The band deviation d at the X heterozygous calls (`baf.py`: the maximum-likelihood location of the
 two-band mixture 0.5 +- d with the sample's own band SD) gives the second estimate of the fraction: loss f = 4d/(1+2d),
 gain f = 4d/(1-2d); an extra X in part of the cells of an XY sample shows heterozygous-looking calls with
 d = (1-f)/(2(1+f)). *Measured* on the mock: 47,XXY, 45,X, a mosaic loss of Y at 0.50 (read 0.49-0.51) and a mosaic loss of an
@@ -202,7 +215,10 @@ split into parent-offspring and full sibling by IBS0; 0.0884-0.177 second degree
 **Families**: a trio is a sample with two relatives (parent-offspring class; a full-sibling- or second-degree-classed pair
 is tried too, see below) who are unrelated to each other and, where both sexes are known, of opposite sex, and whose three
 genotypes show a Mendelian-error rate at the error floor in that orientation and far above it in the other two (at most
-0.02, the others at least three times it) - the orientation test resolves who is the child without ages. The rate is taken
+0.02, the others at least three times it, and errors standing out on at most two chromosomes) - the orientation test
+resolves who is the child without ages. The floor is then the cohort's own: the median rate of the trios accepted, and a
+trio above five times it (never under 0.003) is dropped - on the example true trios sit at 0.0003 and a grandfather in a
+father's place gave 0.019, under the absolute cap but sixty times the floor. The rate is taken
 per chromosome and its median used, so that one chromosome's errors do not hide a true trio: the mock's isodisomy-15 child
 reads as a second-degree relative of its father by kinship (0.159) and IBS0 (0.020), because chromosome 15 carries no
 paternal copy; the orientation test passes on the other chromosomes (0.0035), the pair is reclassified parent-offspring with a
@@ -211,7 +227,8 @@ the child, or a chromosome not inherited as expected - the family-aware reading 
 with no third member is a duo, oriented by the given pedigree or a sample sheet age column when available, else reported as
 an unoriented pair; full-sibling pairs and duplicate pairs are listed as families of their own kind.
 
-**The check against a given pedigree** (`pedigree/check.tsv`): per claimed parent, agrees / the claimed parent is unrelated
+**The check against a given pedigree** (`pedigree/check.tsv`; a table with `Siblings`, `Second Order` and `Third Order`
+columns, as the IGSR's, has those pairs counted as disclosed): per claimed parent, agrees / the claimed parent is unrelated
 (a sample swap when the parent's sex check says so, or the parent has a duplicate; else non-paternity or non-maternity, or a
 swap elsewhere) / the claimed parent is a relative of another degree; per discovered pair not in the pedigree, an undisclosed
 parent-offspring, full-sibling or second-degree pair, or an undisclosed duplicate (siblings with the same given parents

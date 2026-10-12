@@ -303,3 +303,31 @@ def chunks(n, size):
 def csv_rows(path):
     with open(path, newline="") as fh:
         return list(csv.DictReader(fh))
+
+
+def read_relative_columns(path):
+    """Pairs a pedigree table discloses in relative columns beyond the parents (the IGSR table's `Siblings`, `Second Order`,
+    `Third Order`: comma-separated ids per row) -> {frozenset((a, b)): 'siblings' | 'second order' | 'third order'}; {} for a
+    file without such columns."""
+    out = {}
+    with open(path) as fh:
+        head = fh.readline()
+        cols = [c.lstrip("#").strip() for c in _split(head)]
+        low = {c.lower(): i for i, c in enumerate(cols)}
+        kid = _find(cols, KID_COL)
+        if kid is None:
+            return {}
+        ik = cols.index(kid)
+        want = [(low[c], name) for c, name in (("siblings", "siblings"), ("second order", "second order"), ("third order", "third order")) if c in low]
+        if not want:
+            return {}
+        for line in fh:
+            v = _split(line)
+            if len(v) <= ik:
+                continue
+            for i, name in want:
+                if i < len(v) and v[i] not in ("0", "", "NA"):
+                    for other in v[i].replace(" ", "").split(","):
+                        if other and other != v[ik]:
+                            out.setdefault(frozenset((v[ik], other)), name)
+    return out
