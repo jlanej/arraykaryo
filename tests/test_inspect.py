@@ -85,7 +85,7 @@ def test_inspect_refuses_an_export_without_lrr(tmp_path, capsys):
     assert "REFUSED" in capsys.readouterr().out
 
 
-def test_unimplemented_commands_say_where_they_are_specified():
+def test_unimplemented_commands_say_where_they_are_specified(tmp_path):
     with pytest.raises(SystemExit) as e:
-        main(["events"])
+        main(["report", "--out", str(tmp_path)])
     assert "PROMPT.md" in str(e.value)

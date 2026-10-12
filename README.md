@@ -7,9 +7,9 @@ homozygous, in every cell or in part of them - with runs of homozygosity, each w
 self-contained report. The array sibling of [triokaryo](https://github.com/jlanej/triokaryo), which reads the same
 events from whole-genome sequencing of parent-offspring trios.
 
-**Status: a starting point.** `arraykaryo inspect` works and gates the input; everything else is specified in
-[PROMPT.md](PROMPT.md), the implementation brief, and is to be built from it. The brief is the contract; this README
-will follow the implementation.
+**Status: 0.2.0 - milestones 1 and 2 of [PROMPT.md](PROMPT.md).** `inspect`, `mock`, `extract`, `qc` and `sex` work and are
+tested on the mock; `pedigree`, `events` and `report` are next. Methods and every threshold with its source:
+[docs/METHODS.md](docs/METHODS.md); every file and column: [docs/OUTPUT.md](docs/OUTPUT.md); timings: [benchmarks/](benchmarks/README.md).
 
 ## What goes in
 
@@ -19,13 +19,18 @@ are recognised from the contig lengths. Optionally a sample sheet (reported sex,
 `#kid dad mom kid_sex dad_sex mom_sex` form; both are checked against what the genotypes say, never trusted over them.
 
 ```bash
-arraykaryo inspect cohort.bcf          # samples, contigs and assembly, fields, the conventions seen; refuses an export without GT/LRR/BAF
+arraykaryo inspect cohort.bcf                                   # samples, contigs and assembly, fields, the conventions seen; refuses an export without GT/LRR/BAF
+arraykaryo extract --bcf cohort.bcf --out out --threads 8       # one pass into out/cache: per-chromosome arrays of GT, LRR and BAF, a probe table, a manifest
+arraykaryo qc --out out --sample-sheet samples.tsv --threads 8  # probe QC, sample QC (pass or flagged with the reason), the GC-wave correction, the cohort reference
+arraykaryo sex --out out                                        # the sex-chromosome complement of every sample, mosaics included, against the reported sex
+arraykaryo mock --out mock_out                                  # a simulated export with families, planted events and QC failures, and truth.json
 ```
 
-## What will come out (see PROMPT.md)
+## What comes out
 
-`extract` (one pass into per-chromosome arrays), `qc` (probe and sample QC, GC-wave correction, the cohort reference),
-`sex`, `pedigree`, `events`, `report`, a `mock` with planted truth for the tests, and `run` for the whole chain.
+`out/cache/` (the extraction), `out/qc/` (probes.tsv, samples.tsv, the correction, figures), `out/sex/` (sex.tsv, the X-against-Y
+figure, X and Y tracks of every sample not plainly XX or XY); `pedigree`, `events` and `report` follow. Every file and
+column: [docs/OUTPUT.md](docs/OUTPUT.md).
 
 ## Development
 

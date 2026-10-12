@@ -1,5 +1,6 @@
 """arraykaryo: large chromosomal events in a genotyping-array cohort from its VCF/BCF export (GT, LRR, BAF).
 
-A starting point. `arraykaryo inspect` reads what an export carries; the rest of the pipeline is specified in PROMPT.md at the
-repository root and is to be implemented from it."""
-__version__ = "0.0.1"
+inspect (what an export carries), mock (a simulated export with planted truth), extract (one pass into a cache), qc (probe
+and sample QC, the GC wave, the cohort reference), sex (the sex-chromosome complement); pedigree, events and report follow
+(PROMPT.md at the repository root is the brief)."""
+__version__ = "0.2.0"

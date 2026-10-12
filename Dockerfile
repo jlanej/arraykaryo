@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends bcftools tabix 
 WORKDIR /opt/arraykaryo
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-RUN pip install --no-cache-dir . && python -c "import pysam, numpy, matplotlib, arraykaryo"
+RUN pip install --no-cache-dir . && python -c "import pysam, numpy, matplotlib, cyvcf2, arraykaryo"
 
 RUN useradd --create-home --uid 1000 runner
 USER runner

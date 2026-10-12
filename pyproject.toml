@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arraykaryo"
-version = "0.0.1"
+version = "0.2.0"
 description = "Large chromosomal events in a genotyping-array cohort from its VCF/BCF export (GT, LRR, BAF): array QC, pedigree inferred from the genotypes, sex-chromosome complement with aneuploidies and mosaics, near-chromosomal gains, losses, copy-neutral LOH and runs of homozygosity with cell fraction; one interpretable report."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -16,7 +16,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
   "Intended Audience :: Science/Research",
 ]
-dependencies = ["pysam>=0.22", "numpy>=1.22", "matplotlib>=3.5"]
+dependencies = ["pysam>=0.22", "numpy>=1.22", "matplotlib>=3.5", "cyvcf2>=0.30"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
