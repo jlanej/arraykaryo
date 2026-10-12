@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arraykaryo"
-version = "0.5.1"
+version = "0.5.2"
 description = "Large chromosomal events in a genotyping-array cohort from its VCF/BCF export (GT, LRR, BAF): array QC, pedigree inferred from the genotypes, sex-chromosome complement with aneuploidies and mosaics, near-chromosomal gains, losses, copy-neutral LOH and runs of homozygosity with cell fraction; one interpretable report."
 readme = "README.md"
 requires-python = ">=3.9"
