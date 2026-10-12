@@ -464,7 +464,7 @@ def call_one(ctx, i, p, L1, L3):
                                        constitutional=1, n_probes=n_pr, n_het=n_h, n_called=n_pr, lrr=lrr, lrr_se=np.nan, d=np.nan, d_llr=np.nan, het_ratio=np.nan, source="roh_scan",
                                        artefact=artefact_tags(ctx.artefacts, chrom, s0, e0) or NA, note=note, qc_pass=q.get("pass", NA), sample_flags=q.get("flags", NA)))
     # the sex chromosomes as whole-chromosome events
-    if sx and sx.get("mosaic", NA) != NA:
+    if sx and (sx.get("mosaic", NA) != NA or sx.get("check", "") not in ("agrees", "", NA, "not read")):
         for chrom, kind, f, f_lrr, f_baf in sex_events(sx):
             if chrom not in C.chroms:
                 continue
@@ -477,19 +477,24 @@ def call_one(ctx, i, p, L1, L3):
 
 
 def sex_events(sx):
-    """(chrom, kind, f, f_lrr, f_baf) rows from a sex.tsv row's mosaic text."""
+    """(chrom, kind, f, f_lrr, f_baf) rows from a sex.tsv row. Constitutional aneuploidies are read from the complement against the
+    expected one - the reported sex's (XX or XY) when it is given, else the complement the Y implies - so that a 45,X in a
+    reported female is an X lost and a 45,X in a reported male a Y lost; mosaics from the sex step's wording."""
     out = []
     txt = sx.get("mosaic", "")
     f = num(sx.get("f", "")); f_lrr = num(sx.get("f_lrr", "")); f_baf = num(sx.get("f_baf", ""))
     comp = sx.get("complement", "")
+    reported = sx.get("reported_sex", "")
     base = sx.get("base", "")
-    if "constitutional" in txt:
-        nx, bx = comp.count("X"), base.count("X")
-        if nx != bx:
-            out.append(("chrX", "gain" if nx > bx else "loss", 1.0, 1.0, f_baf))
-        ny, by = comp.count("Y"), base.count("Y")
-        if ny != by:
-            out.append(("chrY", "gain" if ny > by else "loss", 1.0, 1.0, np.nan))
+    expected = "XX" if reported == "F" else "XY" if reported == "M" else (base if base and base != NA else "")
+    if comp and comp != NA and expected:
+        nx, ny = comp.count("X") - expected.count("X"), comp.count("Y") - expected.count("Y")
+        if nx:
+            out.append(("chrX", "gain" if nx > 0 else "loss", 1.0, 1.0, f_baf if "constitutional" in txt else np.nan))
+        if ny:
+            out.append(("chrY", "gain" if ny > 0 else "loss", 1.0, 1.0, np.nan))
+    if txt in ("", NA):
+        return out
     for part in txt.split(";"):
         part = part.strip()
         if part.startswith("mosaic") and "of an X" in part:
@@ -500,7 +505,13 @@ def sex_events(sx):
         elif ("gain of a Y" in part) or ("a Y in" in part):
             fy = _pct(part, f)
             out.append(("chrY", "gain", fy, fy, np.nan))
-    return out
+    # the same chromosome twice (a constitutional reading and a mosaic one): keep the constitutional
+    seen, dedup = set(), []
+    for e in out:
+        if e[0] not in seen:
+            seen.add(e[0])
+            dedup.append(e)
+    return dedup
 
 
 def _pct(text, default):
