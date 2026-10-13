@@ -24,6 +24,7 @@ are recognised from the contig lengths. Optionally a sample sheet (reported sex,
 ```bash
 arraykaryo run --bcf cohort.bcf --out out --threads 8 --sample-sheet samples.tsv --pedigree trios.tsv   # everything below, one log
 #   add --pages digest on a cohort of thousands: pages and figures only for the digest's samples, the sex disagreements and the hard failures
+#   add --sex-mosaics to list an X or Y lost or gained in part of the cells on the digest (left out by default: cultured lines, ageing blood)
 arraykaryo inspect cohort.bcf                                   # samples, contigs and assembly, fields, the conventions seen; refuses an export without GT/LRR/BAF
 arraykaryo extract --bcf cohort.bcf --out out --threads 8       # one pass into out/cache: per-chromosome arrays of GT, LRR and BAF, a probe table, a manifest
 arraykaryo qc --out out --sample-sheet samples.tsv --threads 8  # probe QC, sample QC (pass or flagged with the reason), the GC-wave correction, the cohort reference

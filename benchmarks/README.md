@@ -35,3 +35,7 @@ repository.
 | 0.5.3 | events: window tracks | example | 8 | 546 s | - |
 | 0.5.3 | events: calls on 2,124 samples (6.2 core-s per sample over 23 chromosomes) | example | 8 | 1,406 s | 5.0 GB |
 | 0.5.4 | events: calls on 2,124 samples with the baseline split, the tags | example | 8 | 1,409 s (1,924 s with the window tracks) | 4.95 GB |
+| 1.0.0 | events: window tracks | example | 8 | 532 s | - |
+| 1.0.0 | events: calls on 2,124 samples (the baseline split, the tags, the merges of same-type neighbours) | example | 8 | 1,552 s (2,084 s with the window tracks; the test suite ran beside it for two of its minutes) | about 5 GB (as 0.5.4) |
+| 1.0.0 | report, `--pages digest` (44 sample pages, the figures of 11 samples drawn) | example | 8 | 18 s | - |
+| 1.0.0 | pytest (30 tests, the end-to-end run included) | - | - | 107 s | - |

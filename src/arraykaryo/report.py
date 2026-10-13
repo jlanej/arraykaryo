@@ -498,6 +498,9 @@ def run_report(out, cache_dir=None, pages="flagged", top=25, digest_min_mb=10.0,
     else:
         want = {e["sample"] for e in R.events} | {s for s, q in R.qc.items() if q.get("flags", NA) != NA} | odd_sex
     R.pages = {s for s in R.C.samples if s in want}
+    for f in os.listdir(os.path.join(rdir, "samples")):  # the pages of an earlier run with another --pages choice
+        if f.endswith(".html") and f[:-5] not in R.pages:
+            os.remove(os.path.join(rdir, "samples", f))
     missing = [s for s in sorted(R.pages) if s in {e["sample"] for e in R.events} and not os.path.exists(os.path.join(out, "events", "figures", s, "genome.png"))]
     if missing and os.path.exists(os.path.join(out, "events", "windows")):
         n = draw_sample_figures(out, R.cache_dir, missing, threads, log_fn)

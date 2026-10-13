@@ -20,11 +20,12 @@ statistics; diploid GT everywhere, including a man's X and Y; a no-call is `./.`
 not clipped (values slightly below 0 or above 1 occur); on the Y a woman's probes are `./.` with LRR around -3 to -5 outside
 the pseudoautosomal regions, and the PAR probes of the Y carry diploid calls in both sexes.
 
-## What was checked (version 0.5.2; the numbers below are from this run)
+## What was checked (version 1.0.0; the numbers below are from this run)
 
 **Timing** (a laptop, 8 threads): extract 390 s (a 35-GB cache, 1.5 GB resident), qc 373 s, sex about 90 s, pedigree
-134 s, events 32 minutes without figures (the window tracks 546 s of it, the calls 1,409 s at 6.3 core-seconds per
-sample over 23 chromosomes; 5 GB resident), report with digest-only pages a few minutes. `benchmarks/`.
+134 s, events 35 minutes without figures (the window tracks 532 s of it, the calls 1,552 s on 8 threads over 23
+chromosomes; 5 GB resident), report with `--pages digest` 18 s (44 sample pages, the figures of 11 samples drawn; the digest
+page 18 MB with its figures embedded, the cohort page 5.5 MB). `benchmarks/`.
 
 **Quality** (`qc/`). 1,788 of 2,141 samples pass with no flag; 17 fail hard (LRR SD above 0.30); flagged: 257 for a BAF SD
 above 0.06 (this platform's noisy tail: their LRR SD is 0.18 against 0.14 for the rest, and the BAF SD is continuous from
@@ -66,34 +67,45 @@ cryptic relatedness of the 1000 Genomes collection), one pair listed as third or
 and one sample's sex differs between the IGSR table and the sample sheet (HG02300). No claimed parent is unrelated: the
 collection's pedigree holds.
 
-**Events** (`events/`, `report/`). 7,657 events on 1,822 of the 2,124 samples read (median 2 per sample; 179 samples
-with more than 11 are flagged `event_count`), 23,102 runs of homozygosity of 1.5 Mb or more (F_ROH median 0.007; 10 samples
-above 0.0625, the level of a first-cousin union), 356 runs of 10 Mb or more. Of the 5,540 autosomal events 4,543 carry a
-tag: 4,346 recurrent (the same type in 2% or more of the samples over the same 1-Mb bins: the centromere flanks of
+**Events** (`events/`, `report/`). 7,094 events on 1,795 of the 2,124 samples read (median 2 per sample; 179 samples
+with more than 10 are flagged `event_count`), 23,102 runs of homozygosity of 1.5 Mb or more (F_ROH median 0.007; 10 samples
+above 0.0625, the level of a first-cousin union), 356 runs of 10 Mb or more. Of the 5,343 autosomal events 4,539 carry a
+tag: 4,355 recurrent (the same type in 2% or more of the samples over the same 1-Mb bins: the centromere flanks of
 chromosomes 5 and 10 in 14% of samples, 16p11.2 in 13%, the 9p11-q21 heterochromatin block of CHM13 in 48 samples),
-4,469 probe-sparse, 4,142 in a listed artefact region - almost all read from the LRR alone, with no heterozygous calls to
-split; they stay in `events.all.tsv` with their tags and off the digest. The 997 untagged events on 379 samples: 607 with the
-BAF split behind them (242 gains, median 26% of cells; 86 losses, median 17%; 279 copy-neutral LOH, median 12%) and 368
-runs of homozygosity of 10 Mb or more. Four whole chromosomes: a gain of chromosome 9 in 73% of the cells of NA19208 and a
-whole 21 without heterozygosity in NA20509 (an isodisomy or consanguinity: F_ROH says which), plus the sex chromosomes.
+4,482 probe-sparse, 4,187 in a listed artefact region - 4,390 of them read from the LRR alone, with no heterozygous calls to
+split; they stay in `events.all.tsv` with their tags and off the digest. On the X, 1,508 of the 1,703 segments carry a tag
+(the centromere flank of the X in men, read from the LRR alone); 48 events are the sex step's. The 804 untagged autosomal
+events on 371 samples: 428 with the BAF split behind them (139 gains, median 22% of cells; 77 losses, median 17%; 212
+copy-neutral LOH, median 12%), 23 copy changes in every cell or near it read from the LRR alone (the 10.9-Mb deletion of
+18q22.2q23 in NA06984 among them) and 353 runs of homozygosity of 10 Mb or more. Seven whole autosomes: a gain of
+chromosome 12 in 66%, 84% and 49% of the cells of HG01357, HG02322 and NA20759 and of chromosome 9 in 72% and 14% of
+NA19208 and NA21143 (the lymphoblastoid culture's commonest gains), a whole 21 without heterozygosity in NA20509 (an
+isodisomy or consanguinity: F_ROH says which) and a copy-neutral LOH of 21 in 14% of the cells of HG01461, plus the sex
+chromosomes.
 
 The samples triokaryo read from whole-genome sequencing (docs of that project): **HG01103** carries a mosaic loss of 2q
-from q22.1 to q33.1 (141-203 Mb) in 52-55% of cells, called in seven pieces with a lower-fraction piece at q31.1-q31.2
-(35%: the subclonal extension triokaryo saw), and a mosaic loss of 14q13.2-q21.1 (29-35 Mb) in 55% of cells; triokaryo read
-67% and 64% from sequencing of a different DNA preparation. **NA12748** carries a mosaic gain of 13q31.2-q34 (87-113 Mb)
-in 19-20% of cells and a mosaic terminal loss of 21q22.3 (42.8-45.1 Mb) in 20%, where triokaryo read 69% and 59%: the same
+from q22.1 to q31.2 (141-180 Mb) in 47% of cells and a loss at q33.1 (201-203 Mb) in 55%, and a mosaic loss of
+14q13.2-q21.1 (29-35 Mb) in 55% of cells; triokaryo read the 2q loss reaching q33.1 with a subclonal extension (67%) and
+14q at 64% from sequencing of a different DNA preparation. **NA12748** carries a mosaic gain of 13q31.2-q34 (87-113 Mb)
+in 19% of cells and a mosaic terminal loss of 21q22.3 (41-45 Mb) in 20%, where triokaryo read 69% and 59%: the same
 events at the same places, at a third of the fraction - the array's DNA and the sequenced DNA are different preparations
 of a lymphoblastoid line, and a clone's share changes with passage. His two pericentromeric calls (chromosomes 5 and
 10) carry the recurrent and probe-sparse tags. HG01103's parents HG01101 and HG01102 and NA12748's partner NA12749 carry
 none of these events.
 
 Lymphoblastoid culture artefacts are listed as findings with their cell fraction, not treated as errors: the X losses in
-women and the losses of Y in men above, gains of whole or near-whole chromosomes in part of the cells (chromosome 9 in
-NA19208 at 73% and in several lines at 11-21%; 13q in NA20533 at 78%), and copy-neutral LOH of 4q at 8-10% in a handful
-of lines. No gain of chromosome 12 passes the floors in this cohort.
+women and the losses of Y in men above, gains of whole or near-whole chromosomes in part of the cells (chromosome 12 in
+three lines at 49-84% and 12q or 12p in four more; chromosome 9 in NA19208 at 72% and NA21143 at 14%; 13q in NA20533 at
+78%), and copy-neutral LOH of stretches of 4q (median 9 Mb, varying ends) in 8-14% of the cells of 45 lines - at the floor
+of the LOH rule (a band split of 0.05 against a baseline split three times the cohort's median, in lines mostly flagged for
+their BAF SD), a pattern of this platform until one is confirmed; the digest's 10-Mb and 10% floors keep most of them off
+it. The digest (`report/digest.html`) opens with the 47,XXY and 45,X samples, the whole-chromosome gains, the isodisomic 21,
+the arm-sized gains of 11q, 12p and 12q and the loss of 18p, the arm-sized copy-neutral LOH of 5q, 7q and 12p, and the
+constitutional deletion of 18q22.2q23.
 
 Caveats of this platform, written down: the one-copy level is -0.40 (not -0.55), so mosaic fractions read from the LRR
 run below those from the BAF; the baseline band split is 0.01-0.03 per sample and sets the floor of what the BAF can
 confirm (a gain of a whole chromosome needs about 14% of cells here); the Y level varies between Y haplogroups; CHM13's
 assembled heterochromatin and acrocentric arms carry mismapped probes (not used, or tagged); the BAF SD threshold of 0.06
-flags 12% of this cohort, which is read with the flag.
+flags 12% of this cohort, which is read with the flag; a run of homozygosity is called at a heterozygous ratio of 0.1 or
+under (a true run sits at 0.001-0.05 here), so a run interrupted by a short heterozygous stretch is two runs.

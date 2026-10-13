@@ -385,7 +385,8 @@ homozygosity, 47,XXY, a mosaic loss of Y), drawn from idealised tracks with arra
 chromosome, then an arm, then a stretch by size; an event in every cell before one in part of the cells; a change of copy
 number before a copy-neutral LOH before a run of homozygosity; the floors (stretches of 10 Mb or more, mosaics of 10% or
 more for an arm or a stretch, runs of homozygosity of 20 Mb or more, samples that pass QC) are parameters and every event
-left out is counted with its reason; each listed event carries its facts and the sample's genome-wide and chromosome
+left out is counted with its reason; an X or Y lost or gained in part of the cells - the commonest change of a cultured
+line and of ageing blood (*example*: 41 of the 2,141 samples carry one) - is left out unless `--sex-mosaics`; each listed event carries its facts and the sample's genome-wide and chromosome
 figures. `arraykaryo run` chains extract, qc, sex, pedigree, events and report with one log, stops at a failed step, and
 prints where every table and page is. *Measured*: the default mock (60 samples, 82,000 probes) runs end to end, with
 figures and the report, in 17 s on four threads.
