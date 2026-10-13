@@ -101,7 +101,7 @@ def cmd_report(a):
     if is_done(a.out, "report") and not a.redo:
         log("report is done (--redo to repeat)", "report")
         return 0
-    run_report(a.out, cache_dir=cache_dir(a), pages=a.pages, top=a.top, digest_min_mb=a.digest_min_mb, digest_min_f=a.digest_min_f, threads=a.threads)
+    run_report(a.out, cache_dir=cache_dir(a), pages=a.pages, top=a.top, digest_min_mb=a.digest_min_mb, digest_min_f=a.digest_min_f, sex_mosaics=a.sex_mosaics, threads=a.threads)
     return 0
 
 
@@ -135,7 +135,7 @@ def cmd_run(a):
                 run_events(a.out, cache_dir=cache_dir(a), threads=a.threads, params=dict(min_mb=a.min_mb, window=a.window), figures=a.figures)
             elif step == "report":
                 from .report import run_report
-                run_report(a.out, cache_dir=cache_dir(a), pages=a.pages, top=a.top, digest_min_mb=a.digest_min_mb, digest_min_f=a.digest_min_f, threads=a.threads)
+                run_report(a.out, cache_dir=cache_dir(a), pages=a.pages, top=a.top, digest_min_mb=a.digest_min_mb, digest_min_f=a.digest_min_f, sex_mosaics=a.sex_mosaics, threads=a.threads)
         except SystemExit as e:
             log("%s failed: %s" % (step, e), "run")
             return 1
@@ -241,6 +241,7 @@ def add_report_args(p):
     p.add_argument("--top", type=int, default=25, help="events on the digest (default 25)")
     p.add_argument("--digest-min-mb", type=float, default=10.0, help="the smallest stretch on the digest (default 10 Mb)")
     p.add_argument("--digest-min-f", type=float, default=0.1, help="the smallest mosaic cell fraction on the digest for an arm or stretch (default 0.1)")
+    p.add_argument("--sex-mosaics", action="store_true", help="list an X or Y lost or gained in part of the cells on the digest (left out by default: the commonest change of a cultured line, and of ageing blood)")
 
 
 def main(argv=None):

@@ -33,7 +33,7 @@ from .sex import read_sex
 from .util import NA, finite, log, mark_done, num, read_json, robust_sd, write_json, write_tsv
 from .windows import save_tracks, tracks_for_block, window_layout
 
-PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, chrom_z=4.0, chrom_lrr_min=0.03, recurrent_frac=0.02, sparse_x=5.0, d_min=0.02, d_llr=30.0, loh_d_min=0.04, loh_llr=50.0, loh_n_het_min=50, n_het_min=20, het_floor=0.2, n_called_min=40, whole_frac=0.9,
+PARAMS = dict(window=100, min_mb=2.0, min_probes=40, lrr_min=0.025, lrr_z=5.0, lrr_alone=0.10, chrom_z=4.0, chrom_lrr_min=0.03, recurrent_frac=0.02, sparse_x=5.0, d_min=0.02, d_llr=30.0, loh_d_min=0.04, loh_llr=50.0, loh_n_het_min=50, n_het_min=20, het_floor=0.1, n_called_min=40, whole_frac=0.9,
               const_f=0.9, alpha=0.01, q_floor=20.0, merge_div=2.0, block=64, l3_default=0.40, l1_literature=-0.66, sample_block=16)
 # lrr_min / lrr_z: the smallest LRR shift and its significance (the median's SE from the sample's own noise); lrr_alone: below this |LRR| a
 # mosaic gain or loss needs the BAF split too (residual GC waves of a few hundredths survive the correction and must not become events),

@@ -287,7 +287,7 @@ ratio 1):
 
 | reading | rule |
 | --- | --- |
-| run of homozygosity | heterozygous ratio at or under 0.2 over 40 or more called probes (the calls left are errors, whatever their BAF says); LRR at one copy (under half the one-copy level) makes it a constitutional deletion, LRR up a gain without heterozygosity; a run under 10 Mb is a run (roh.all.tsv), not an event |
+| run of homozygosity | heterozygous ratio at or under 0.1 over 40 or more called probes (a true run sits at 0.003-0.03 on the example; 0.2 let two runs join across normal sequence between them) (the calls left are errors, whatever their BAF says); LRR at one copy (under half the one-copy level) makes it a constitutional deletion, LRR up a gain without heterozygosity; a run under 10 Mb is a run (roh.all.tsv), not an event |
 | gain / loss | the median LRR at least 0.025 and 5 standard errors from 0 (the median's SE from the sample's own probe noise), with the band deviation significant too (beyond the baseline as above, a likelihood ratio of 30 or more over 20 or more heterozygous calls) unless the shift reaches 0.10 on its own - residual GC waves of a few hundredths survive the correction and must not become events - or the segment is a whole chromosome or arm whose level stands four robust SD out among the sample's chromosomes (never under 0.03) |
 | copy-neutral LOH | LRR flat, and - with no LRR change to back it - a split of at least 0.04 beyond the baseline and four times its spread (a cell fraction of 0.08), a likelihood ratio of 50 or more over 50 or more heterozygous calls; the brief's floors (0.10 for a whole chromosome, 0.20 for a 2-10 Mb stretch) lie above it |
 | nothing | everything else (a segment the noise cut) |

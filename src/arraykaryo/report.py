@@ -354,7 +354,7 @@ class Report:
                  "<li><span style=\"color:#009E73\">&#9632;</span> BAF at heterozygous calls, the heterozygous rate</li><li><span style=\"color:#444444\">&#9632;</span> LRR per probe</li><li><span style=\"color:#9a9a9a\">&#9632;</span> BAF at homozygous calls</li></ul>")
         w.append("<h2>The karyotype string</h2><p>ISCN-like: the modal number and the sex-chromosome complement, then the constitutional terms in chromosome order (<code>+21</code>, <code>del(1)(p36.32p36.21)</code>, <code>roh(1)(q21.2q24.1)</code>, <code>upd(15)(iso)?</code> for a whole chromosome without heterozygosity), and one line per mosaic with its cell fraction in brackets: <code>mos 47,XY,+12[0.28]/46,XY</code>, <code>mos 46,XY,del(7)(q11.21q36.3)[0.23]/46,XY</code>, <code>mos 45,X[0.51]/46,XY</code> for a mosaic loss of Y.</p>")
         w.append("<h2>Calling rules</h2><ul><li>Windows of about 100 probes give three tracks per sample: the median corrected LRR, the band split d at heterozygous calls, the heterozygous rate against the Hardy-Weinberg expectation. They are segmented jointly (circular binary segmentation) and every boundary refined to probe resolution.</li>"
-                 "<li>A segment is a run of homozygosity when its heterozygous rate sits at the error floor (0.2 of expectation); with LRR at one copy it is a constitutional deletion.</li><li>A gain or loss needs an LRR shift of at least 0.03 and 5 standard errors, with the band split too unless the shift reaches 0.10.</li><li>A copy-neutral LOH is a flat LRR with a band split (d at least 0.02, log-likelihood ratio at least 30).</li>"
+                 "<li>A segment is a run of homozygosity when its heterozygous rate sits at the error floor (0.1 of expectation); with LRR at one copy it is a constitutional deletion.</li><li>A gain or loss needs an LRR shift of at least 0.03 and 5 standard errors, with the band split too unless the shift reaches 0.10.</li><li>A copy-neutral LOH is a flat LRR with a band split (d at least 0.02, log-likelihood ratio at least 30).</li>"
                  "<li>Floors: 2 Mb and 40 probes. A segment covering 90% of a chromosome's probed span is whole, of an arm's p or q, else a stretch.</li><li>Runs of homozygosity from the genotypes with PLINK's sliding window (50 probes, one heterozygous call allowed; runs of 1.5 Mb and 100 probes or more); runs of 10 Mb or more are events.</li>"
                  "<li>Artefact-prone regions (the MHC, the 8p23.1 and 17q21.31 inversions, the centromere flanks, the chromosome ends, acrocentric short arms) tag an event; they never remove it.</li></ul>")
         w.append("<h2>Every column</h2>")
@@ -383,7 +383,7 @@ class Report:
             elif e["type"] in ("gain", "loss") and e["source"] == "segmentation" and finite(f) and f < 0.9 and not finite(num(e["f_baf"])):
                 why = "a mosaic copy change read from the LRR alone (no BAF split to confirm it)"
             elif e["source"] == "sex" and finite(f) and f < 0.9 and not sex_mosaics:
-                why = "a sex-chromosome mosaic (--no-sex-mosaics)"
+                why = "an X or Y lost or gained in part of the cells (culture or age: --sex-mosaics lists them)"
             elif e["type"] == "roh" and not whole and size_mb < min_mb_roh:
                 why = "a run of homozygosity under %g Mb" % min_mb_roh
             elif e["span"] == "stretch" and size_mb < min_mb:
@@ -404,9 +404,9 @@ class Report:
         w.append('<p class="nav"><a href="index.html">the cohort</a><a href="guide.html">the guide</a></p><h1>The largest chromosomal events in %d samples</h1>' % self.C.n_samples)
         w.append('<p class="muted">arraykaryo %s digest, %s. Every event is a reading of the array\'s LRR, BAF and genotypes, to be confirmed by a clinical karyotype or another assay before it is reported.</p>' % (__version__, time.strftime("%Y-%m-%d")))
         w.append('<div class="box"><p><b>What is on this page.</b> The %d largest of %d events, ranked by impact: a whole chromosome first (an aneuploidy, an isodisomy), then an arm, then a stretch by size; within each, an event in every cell before one in part of the cells, and a change of copy number before a copy-neutral LOH before a run of homozygosity. '
-                 'Left out and counted in digest_left_out.tsv: stretches under %g Mb, mosaic segments in under %.0f%% of the cells, runs of homozygosity under %g Mb, the calls of samples that fail QC, mosaic copy changes read from the LRR alone (no BAF split to confirm them), and copy changes read from the LRR alone in an artefact-prone region (the centromere flanks, the chromosome ends, the MHC and the inversions: tagged in events.all.tsv, never removed there). A whole chromosome is never left out for its share of cells.</p>'
+                 'Left out and counted in digest_left_out.tsv: stretches under %g Mb, mosaic segments in under %.0f%% of the cells, runs of homozygosity under %g Mb, the calls of samples that fail QC, mosaic copy changes read from the LRR alone (no BAF split to confirm them), copy changes read from the LRR alone in an artefact-prone region%s (the centromere flanks, the chromosome ends, the MHC and the inversions: tagged in events.all.tsv, never removed there). A whole chromosome is never left out for its share of cells.</p>'
                  '<p><b>How to read a figure.</b> <b>LRR</b> is the probe intensity against the cohort on a log2 scale: 0 is two copies, about -0.5 one, about +0.35 three; a mosaic sits in between in proportion to the share of cells. <b>BAF</b> is the B-allele share at the sample\'s heterozygous calls: one band at 0.5 means two balanced copies; two bands mean an imbalance (a gain, a loss, or a copy-neutral LOH when the LRR stays at 0); no heterozygous calls mean one copy or two identical copies.</p></div>' % (
-                     len(shown), len(self.events), min_mb, 100 * min_f, min_mb_roh))
+                     len(shown), len(self.events), min_mb, 100 * min_f, min_mb_roh, "" if sex_mosaics else ", and an X or Y lost or gained in part of the cells (the commonest change of a cultured line, and of ageing blood; --sex-mosaics lists them)"))
         w.append("<h2>The events</h2>" + table(["rank", "sample", "event", "size_mb", "f", "karyotype", "note"], rows, sortable=False, link=("sample", lambda r: self.sample_href(r["sample"]))) if rows else "<p class=\"muted\">no event passes the floors</p>")
         if beyond:
             w.append('<p class="muted">%d more events pass the floors but lie beyond the first %d; %d are left out by the floors (digest_left_out.tsv).</p>' % (len(beyond), top, len(left)))
@@ -474,7 +474,7 @@ def fig_froh(out, kar):
     return save(fig, os.path.join(out, "report", "figures", "froh"), "F_ROH per sample", "The genome fraction in runs of homozygosity of 1.5 Mb or more per sample; the dotted line is the expectation for the child of first cousins.", [("orange", "samples")])
 
 
-def run_report(out, cache_dir=None, pages="flagged", top=25, digest_min_mb=10.0, digest_min_f=0.1, threads=1, log_fn=log):
+def run_report(out, cache_dir=None, pages="flagged", top=25, digest_min_mb=10.0, digest_min_f=0.1, sex_mosaics=False, threads=1, log_fn=log):
     """pages: 'flagged' (flagged samples, samples with an event, samples not plainly XX or XY), 'digest' (the digest's samples, the
     sex disagreements and the hard QC failures: a cohort of thousands where most samples carry some call stays readable), or
     'all'. Figures missing for a page's sample are drawn here."""
@@ -488,7 +488,7 @@ def run_report(out, cache_dir=None, pages="flagged", top=25, digest_min_mb=10.0,
         fig_landscape(out, R.events, R.G, R.C.samples)
     if R.kar:
         fig_froh(out, R.kar)
-    shown, left = R.write_digest(top=top, min_mb=digest_min_mb, min_f=digest_min_f)
+    shown, left = R.write_digest(top=top, min_mb=digest_min_mb, min_f=digest_min_f, sex_mosaics=sex_mosaics)
     odd_sex = {s for s, r in R.sex.items() if r["mosaic"] != NA or r["check"] not in ("agrees", NA, "not read")}
     if pages == "all":
         want = set(R.C.samples)
@@ -506,7 +506,7 @@ def run_report(out, cache_dir=None, pages="flagged", top=25, digest_min_mb=10.0,
         R.write_sample_page(s)
     R.write_index()
     R.write_guide()
-    shown, left = R.write_digest(top=top, min_mb=digest_min_mb, min_f=digest_min_f)
+    shown, left = R.write_digest(top=top, min_mb=digest_min_mb, min_f=digest_min_f, sex_mosaics=sex_mosaics)
     log_fn("report/index.html, %d sample pages, the guide, the digest (%d events listed, %d left out) in %.1f s" % (len(R.pages), shown, left, time.time() - t0), "report")
     mark_done(out, "report", dict(seconds=time.time() - t0, pages=len(R.pages)))
     return dict(pages=len(R.pages), digest=shown)
