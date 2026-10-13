@@ -36,6 +36,13 @@ arraykaryo report --out out                                     # the cohort pag
 arraykaryo mock --out mock_out                                  # a simulated export with families, planted events and QC failures, and truth.json
 ```
 
+## The example, on one page
+
+[jlanej.github.io/arraykaryo](https://jlanej.github.io/arraykaryo/) shows what one run found on the public 1000 Genomes
+cohort: every event on the chromosomes, the mosaics checked against sequencing, the sex chromosomes of every sample, the
+families, the digest. It is `docs/index.html`, built from the run's tables by `scripts/build_site.py RUN_DIR docs` (GitHub
+Pages serves `docs/`).
+
 ## What comes out
 
 `out/cache/` (the extraction), `out/qc/` (probes.tsv, samples.tsv, the correction, figures), `out/sex/` (sex.tsv, the X-against-Y
