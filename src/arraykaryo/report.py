@@ -187,9 +187,12 @@ class Report:
         if not s:
             return "\n".join(w + ['<p class="muted">The qc step has not run.</p>'])
         w.append("<p>%d probes, %d kept for LRR and %d for genotypes (%s). %d of %d samples pass; a flag is shown beside every call of a flagged sample; a hard failure (LRR SD above %g) is not read. "
-                 "Corrections: the GC wave per sample (the correlation of LRR with the 1-Mb GC falls from a median of %.3f to %.3f), then the cohort reference per probe%s.</p>" % (
+                 "Corrections: %s, then the cohort reference per probe%s.</p>" % (
                      s["probes"], s["probes_keep"], s["probes_keep_gt"], ", ".join("%s %d" % kv for kv in sorted(s["reasons"].items()) if kv[0] != NA), s["passing"], s["samples"],
-                     s["thresholds"]["sample_lrr_sd_fail"]["value"], abs(s["cohort"]["gc_corr_before"]["median"]), abs(s["cohort"]["gc_corr_after"]["median"]),
+                     s["thresholds"]["sample_lrr_sd_fail"]["value"],
+                     "the GC wave per sample (GC from %s; the correlation of LRR with the 1-Mb GC falls from a median of %.3f to %.3f)" % (s.get("gc_source", "INFO/GC"), abs(s["cohort"]["gc_corr_before"]["median"]), abs(s["cohort"]["gc_corr_after"]["median"]))
+                     if s.get("gc", {}).get("available", True) else
+                     "<b>no GC wave correction</b> (the export carries no INFO/GC and no --fasta was given: the wave of a sample stays in its LRR and in its unsigned waviness factor)",
                      " (per batch: %s)" % ", ".join(s["batches"]) if s.get("use_batch") else ""))
         w.append(figure(os.path.join(self.out, "qc", "figures", "qc_distributions.png"), "Sample QC metrics with the thresholds that flag (dotted) or fail (dashed) a sample; the black line is the cohort median. Every metric is defined in the guide."))
         w.append(figure(os.path.join(self.out, "qc", "figures", "gc_wave.png"), "The GC wave before and after correction for a typical sample and for the one with the strongest wave."))

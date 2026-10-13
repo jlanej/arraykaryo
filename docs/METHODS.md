@@ -123,7 +123,9 @@ call rate) are flagged with their reason and nothing else is.
 **Corrections**, in this order, per sample, on the autosomes and the X:
 
 1. *The GC wave* (Diskin 2008; MoChA's `--adjust-BAF-LRR` is the modern reference): LRR regressed on the probe's
-   `INFO/GC` and on the mean GC of the probes within 500 kb (the 1-Mb window), each standardised and entered as a
+   `INFO/GC` (what `bcftools +gtc2vcf` writes from the reference over +-200 bp; an export without it - Illumina's own
+   GTCtoVCF writes none - gets the same quantity computed from `--fasta`, and without either source the regression is
+   skipped, the waviness factor stays unsigned and the log and report say so) and on the mean GC of the probes within 500 kb (the 1-Mb window), each standardised and entered as a
    quadratic, fitted by least squares over the autosomes on the LRR clipped to +-1 (robust to outliers) and on
    *within-arm deviations* - every chromosome arm's own mean of the LRR and of the covariates is removed before the
    products are formed - so that a whole chromosome or arm gained or lost carries no leverage on the slopes (fitted on all

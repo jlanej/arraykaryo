@@ -50,7 +50,7 @@ def cmd_extract(a):
         with open(a.samples) as fh:
             samples = [l.strip().split()[0] for l in fh if l.strip()]
     chroms = [c for c in a.chroms.split(",") if c] if a.chroms else None
-    extract(a.bcf, cache_dir(a), threads=a.threads, route=a.route, baf_dtype=a.baf_dtype, redo=a.redo, samples=samples, genome=a.genome, chroms=chroms)
+    extract(a.bcf, cache_dir(a), threads=a.threads, route=a.route, baf_dtype=a.baf_dtype, redo=a.redo, samples=samples, genome=a.genome, chroms=chroms, fasta=a.fasta)
     return 0
 
 
@@ -60,7 +60,7 @@ def cmd_qc(a):
     if is_done(a.out, "qc") and not a.redo:
         log("qc is done (--redo to repeat)", "qc")
         return 0
-    run_qc(a.out, cache_dir=cache_dir(a), sample_sheet=a.sample_sheet, exclude_probes=a.exclude_probes, exclude_samples=a.exclude_samples, threads=a.threads)
+    run_qc(a.out, cache_dir=cache_dir(a), sample_sheet=a.sample_sheet, exclude_probes=a.exclude_probes, exclude_samples=a.exclude_samples, threads=a.threads, fasta=a.fasta)
     return 0
 
 
@@ -123,7 +123,7 @@ def cmd_run(a):
                 cmd_extract(a)
             elif step == "qc":
                 from .qc import run_qc
-                run_qc(a.out, cache_dir=cache_dir(a), sample_sheet=a.sample_sheet, exclude_probes=a.exclude_probes, exclude_samples=a.exclude_samples, threads=a.threads)
+                run_qc(a.out, cache_dir=cache_dir(a), sample_sheet=a.sample_sheet, exclude_probes=a.exclude_probes, exclude_samples=a.exclude_samples, threads=a.threads, fasta=a.fasta)
             elif step == "sex":
                 from .sex import run_sex
                 run_sex(a.out, cache_dir=cache_dir(a), threads=a.threads)
@@ -172,6 +172,7 @@ def add_common(p, bcf=False):
         p.add_argument("--route", default="auto", choices=["auto", "bcftools", "cyvcf2"], help="the extraction route (auto: cyvcf2 when installed, else bcftools)")
         p.add_argument("--baf-dtype", default="float16", choices=["float16", "float32"], help="the BAF storage type (default float16; METHODS records the precision check)")
         p.add_argument("--chroms", default="", help="a subset of chromosomes (chr21,chrX) for a quick pass")
+    p.add_argument("--fasta", default="", help="the reference FASTA (indexed), to compute the probe GC (gtc2vcf's +-200 bp) when the export carries no INFO/GC")
 
 
 def build_parser():

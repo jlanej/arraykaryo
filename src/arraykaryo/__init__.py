@@ -5,4 +5,4 @@ and sample QC, the GC wave, the cohort reference), sex (the sex-chromosome compl
 check against a given pedigree), events (near-chromosomal events, runs of homozygosity, karyotype strings, figures); report
 follows
 (PROMPT.md at the repository root is the brief)."""
-__version__ = "1.0.0"
+__version__ = "1.1.0"

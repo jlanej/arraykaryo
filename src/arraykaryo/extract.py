@@ -264,7 +264,7 @@ def choose_route(route):
     return route
 
 
-def extract(path, out, threads=1, route="auto", baf_dtype="float16", redo=False, samples=None, genome="", chroms=None, log_fn=log):
+def extract(path, out, threads=1, route="auto", baf_dtype="float16", redo=False, samples=None, genome="", chroms=None, fasta="", log_fn=log):
     """The pass. `samples`: a subset (export order kept); `chroms`: a subset of chromosomes (canonical names)."""
     t0 = time.time()
     os.makedirs(os.path.join(out, "done"), exist_ok=True)
@@ -301,11 +301,18 @@ def extract(path, out, threads=1, route="auto", baf_dtype="float16", redo=False,
                 c, n, s = extract_chrom(a)
                 log_fn("%s: %d records in %.1f s" % (c, n, s), "extract")
     assemble_probes(out, todo, G, h["infos"])
+    gc_source = "INFO/GC" if "GC" in h["infos"] else "none"
+    if gc_source == "none":
+        log_fn("the export carries no INFO/GC%s" % (": GC will come from the FASTA" if fasta else "; without --fasta the qc step cannot fit the GC wave"), "extract")
     st = os.stat(path)
     write_json(dict(export=path, size=st.st_size, mtime=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime)), header_md5=h["header_md5"], samples=len(h["samples"]),
                     chroms={c: int(counts[c]) for c in todo}, assembly=G.name, genome_label=G.label, genome_table=genome if (genome and os.path.exists(str(genome))) else "",
-                    contig_names={c: names[c] for c in todo}, info_fields=h["infos"], baf_dtype=baf_dtype, route=route, threads=threads, version=__version__,
+                    contig_names={c: names[c] for c in todo}, info_fields=h["infos"], gc_source=gc_source, baf_dtype=baf_dtype, route=route, threads=threads, version=__version__,
                     seconds=time.time() - t0, created=time.strftime("%Y-%m-%d %H:%M:%S")), os.path.join(out, "manifest.json"))
+    if fasta and gc_source == "none":
+        from .cache import Cache
+        from .gc import fill_gc
+        fill_gc(Cache(out), fasta, log_fn)
     log_fn("cache %s: %d chromosomes, %d probes, %.1f s" % (out, len(todo), sum(counts[c] for c in todo), time.time() - t0), "extract")
     return out
 

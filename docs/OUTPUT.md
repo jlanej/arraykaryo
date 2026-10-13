@@ -9,9 +9,9 @@ in `DIR/<step>/done.json`.
 
 | file | content |
 | --- | --- |
-| `manifest.json` | the export path as given, its size and modification time, the md5 of its header, the sample count, per-chromosome record counts, the assembly, the contig names as the file spells them, the INFO fields found, the BAF storage type, the route, the arraykaryo version, the time taken |
+| `manifest.json` | the export path as given, its size and modification time, the md5 of its header, the sample count, per-chromosome record counts, the assembly, the contig names as the file spells them, the INFO fields found, the BAF storage type, the route, the arraykaryo version, the time taken; gc_source (INFO/GC, fasta, INFO/GC + fasta, or none) and gc_fasta (the FASTA's file name when GC came from it) |
 | `samples.txt` | the samples in the export's order (one per line) |
-| `probes.tsv` | chrom, pos, id, ref, alt, snv (a biallelic single-base change), intensity_only, par, gc, gentrain, cluster_sep, allele_a, allele_b (NA when the export lacks them); every record of the export, in file order within each chromosome |
+| `probes.tsv` | chrom, pos, id, ref, alt, snv (a biallelic single-base change), intensity_only, par, gc (INFO/GC, or computed from --fasta over gtc2vcf's +-200 bp; NA without either), gentrain, cluster_sep, allele_a, allele_b (NA when the export lacks them); every record of the export, in file order within each chromosome |
 | `probes.npz` | the same, binary (pos, snv, intensity_only, par, gc, gentrain, cluster_sep) |
 | `gt.<chrom>.npy`, `lrr.<chrom>.npy`, `baf.<chrom>.npy` | samples x probes: int8 (0 hom-ref, 1 het, 2 hom-alt, -1 no-call), float32, float16 |
 | `done/<chrom>.json` | the chromosome is complete (resumability) |

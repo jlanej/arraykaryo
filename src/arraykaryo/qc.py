@@ -97,8 +97,10 @@ def gc_stats(cache):
         g.append(gc[np.isfinite(gc)])
         ww = window_gc(pr.pos, gc)
         w.append(ww[np.isfinite(ww)])
-    g, w = np.concatenate(g), np.concatenate(w)
-    return dict(gc_mean=float(g.mean()), gc_sd=float(g.std() + 1e-9), w_mean=float(w.mean()), w_sd=float(w.std() + 1e-9))
+    g, w = np.concatenate(g) if g else np.zeros(0), np.concatenate(w) if w else np.zeros(0)
+    if g.size < 100:                                                            # no GC in the export (and no --fasta): the wave is not fitted
+        return dict(gc_mean=np.nan, gc_sd=np.nan, w_mean=np.nan, w_sd=np.nan, available=False)
+    return dict(gc_mean=float(g.mean()), gc_sd=float(g.std() + 1e-9), w_mean=float(w.mean()), w_sd=float(w.std() + 1e-9), available=True)
 
 
 # ------------------------------------------------------------------------------------------------------------- pass 1
@@ -133,7 +135,7 @@ def pass1_chrom(args):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", RuntimeWarning)
                     meds.append(np.nanmedian(np.asarray(lrr[:, a:b], dtype=np.float64), axis=1))
-                gcs.append(float(np.nanmean(pr.gc[a:b])))
+                gcs.append(float(np.nanmean(pr.gc[a:b])) if np.isfinite(pr.gc[a:b]).any() else np.nan)
         if meds:
             out["win_med"], out["win_gc"] = np.stack(meds), np.asarray(gcs)
     for a in range(0, P, BLOCK):
@@ -249,7 +251,7 @@ def combine_pass1(parts, cache):
             W, G = np.concatenate(win_med), np.concatenate(win_gc)               # windows x S, windows
             yi = W - np.nanmedian(W, axis=0)[None, :]
             wf = np.nanmedian(np.abs(yi), axis=0)
-            Gc = G - np.nanmean(G)
+            Gc = G - np.nanmean(G) if np.isfinite(G).any() else np.zeros_like(G)   # no GC: the waviness factor is unsigned
             num = np.nansum(np.nan_to_num(yi) * Gc[:, None], axis=0)
             s["wf"] = np.where(num >= 0, wf, -wf)
         else:
@@ -316,8 +318,8 @@ class Correction:
         z = np.load(os.path.join(out, "qc", "correction.npz"), allow_pickle=True)
         self.coef = z["coef"]                        # 5 x S
         self.batch_idx = z["batch_idx"]              # S (-1: cohort-wide)
-        self.gc_stats = {k: float(z["gc_" + k]) for k in ("mean", "sd")}
         self.gc_stats = dict(gc_mean=float(z["gc_mean"]), gc_sd=float(z["gc_sd"]), w_mean=float(z["w_mean"]), w_sd=float(z["w_sd"]))
+        self.gc_available = bool(z["gc_available"]) if "gc_available" in z.files else True
         self.ref = {str(c): z["ref_" + str(c)] for c in z["chroms"]}
         self.ref_batch = {str(c): z["refb_" + str(c)] for c in z["chroms"]}
         self.use_batch = bool(z["use_batch"])
@@ -335,9 +337,10 @@ class Correction:
         sl = probe_slice if probe_slice is not None else slice(0, lrr.shape[1])
         idx = np.arange(cache.n_samples) if sample_idx is None else np.atleast_1d(sample_idx)
         L = np.asarray(lrr[idx, sl], dtype=np.float32)
-        gc_z, w_z = self.covariates(cache, chrom)
-        X = design(gc_z[sl], w_z[sl])
-        L -= (X @ self.coef[:, idx]).T.astype(np.float32)
+        if self.gc_available:
+            gc_z, w_z = self.covariates(cache, chrom)
+            X = design(gc_z[sl], w_z[sl])
+            L -= (X @ self.coef[:, idx]).T.astype(np.float32)
         if reference and chrom != "chrY" and chrom in self.ref:
             r = self.ref[chrom][sl]
             if self.use_batch:
@@ -413,7 +416,7 @@ def _hwe_one(aa, ab, bb):
     return float(min(1.0, sum(v for v in probs.values() if v <= target * (1 + 1e-9)) / tot))
 
 
-def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samples="", threads=1, params=None, log_fn=log):
+def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samples="", threads=1, params=None, fasta="", log_fn=log):
     t0 = time.time()
     cache_dir = cache_dir or os.path.join(out, "cache")
     C = Cache(cache_dir)
@@ -428,8 +431,18 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     batch = np.array([sheet.get(s, {}).get("batch", "") for s in C.samples])
     excl_s = set(_read_list(exclude_samples))
     excl_p = set(_read_list(exclude_probes))
+    from .gc import fill_gc, gc_source_of
+    gc_source = C.manifest.get("gc_source") or gc_source_of(C)
+    if fasta and gc_source != "INFO/GC":
+        fill_gc(C, fasta, log_fn)
+        C = Cache(cache_dir)
+        gc_source = C.manifest.get("gc_source", gc_source)
     stats = gc_stats(C)
-    log_fn("%d samples, %d probes on %d chromosomes; GC mean %.3f (SD %.3f), 1-Mb GC SD %.3f" % (S, sum(C.n_probes.values()), len(C.chroms), stats["gc_mean"], stats["gc_sd"], stats["w_sd"]), "qc")
+    if stats["available"]:
+        log_fn("%d samples, %d probes on %d chromosomes; GC (%s) mean %.3f (SD %.3f), 1-Mb GC SD %.3f" % (S, sum(C.n_probes.values()), len(C.chroms), gc_source, stats["gc_mean"], stats["gc_sd"], stats["w_sd"]), "qc")
+    else:
+        log_fn("%d samples, %d probes on %d chromosomes; NO GC: the export carries no INFO/GC and no --fasta was given, so the GC-wave regression is skipped "
+               "(the cohort reference per probe and the per-sample offset still apply; the waviness factor is unsigned)" % (S, sum(C.n_probes.values()), len(C.chroms)), "qc")
     # pass 1
     jobs = [dict(cache=cache_dir, chrom=c, gc_stats=stats) for c in C.chroms]
     parts = _pool(pass1_chrom, jobs, threads)
@@ -437,6 +450,8 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     # the GC fit per sample: the four slopes on within-arm deviations (no intercept: the per-sample median offset centres the result)
     xtx = s["xtx"] + 1e-9 * np.eye(4)
     coef = np.vstack([np.zeros((1, S)), np.linalg.solve(xtx, s["xty"])])      # 5 x S, the intercept row 0
+    if not stats["available"]:
+        coef[:] = 0.0
     wf = s["wf"]
     # the per-sample raw metrics
     call_rate = s["called"] / np.maximum(s["total"], 1)
@@ -491,7 +506,7 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     offset = np.where(np.isfinite(offset), offset, 0.0)
     gc_corr_after = (wy2 / max(s["wn"], 1)) / np.maximum(lrr_sd * np.sqrt(w22 / max(s["wn"], 1)), 1e-9)
     lrr_sd_diff = absd / np.sqrt(2.0) * np.sqrt(np.pi / 2.0)             # the noise SD from first differences (robust to events)
-    np.savez(os.path.join(qdir, "correction.npz"), coef=coef, batch_idx=batch_idx, use_batch=use_batch, gc_mean=stats["gc_mean"], gc_sd=stats["gc_sd"], w_mean=stats["w_mean"], w_sd=stats["w_sd"],
+    np.savez(os.path.join(qdir, "correction.npz"), coef=coef, batch_idx=batch_idx, use_batch=use_batch, gc_available=bool(stats["available"]), gc_mean=stats["gc_mean"], gc_sd=stats["gc_sd"], w_mean=stats["w_mean"], w_sd=stats["w_sd"],
              offset=offset, chroms=np.array(C.chroms), batches=np.array(batches), **{"ref_" + p["chrom"]: p["ref"] for p in parts2}, **{"refb_" + p["chrom"]: p["ref_batch"] for p in parts2})
     # probe QC (probes.tsv written chromosome by chromosome: a list of every probe's row would hold gigabytes on a 2.4-million-probe array)
     keep_all, keep_gt_all, maf_all, cr_all, hwe_all = [], [], [], [], []
@@ -607,7 +622,7 @@ def run_qc(out, cache_dir=None, sample_sheet="", exclude_probes="", exclude_samp
     n_hard = sum(1 for r in rows if r["hard_fail"])
     summary = dict(samples=S, passing=n_pass, flagged=S - n_pass, hard_fail=n_hard, probes=n_probes_total, probes_keep=int(np.concatenate(keep_all).sum()), probes_keep_gt=int(np.concatenate(keep_gt_all).sum()),
                    reasons=n_reasons, flags=_count([",".join(f) or NA for f in flags_all]), cohort=cohort, thresholds={k: dict(value=T[k], source=THRESHOLDS[k][1]) for k in THRESHOLDS},
-                   batches=batches, use_batch=use_batch, gc=stats, y_midpoint=float(y_mid) if np.isfinite(y_mid) else None, x_reference_samples=int(ref_x.sum()), seconds=time.time() - t0)
+                   batches=batches, use_batch=use_batch, gc=stats, gc_source=gc_source, y_midpoint=float(y_mid) if np.isfinite(y_mid) else None, x_reference_samples=int(ref_x.sum()), seconds=time.time() - t0)
     write_json(summary, os.path.join(qdir, "summary.json"))
     log_fn("probes: %d kept for LRR, %d for genotypes of %d; samples: %d pass, %d flagged (%d hard) of %d; LRR SD median %.3f raw -> %.3f corrected; GC correlation %.3f -> %.3f" % (
         summary["probes_keep"], summary["probes_keep_gt"], n_probes_total, n_pass, S - n_pass, n_hard, S, cohort["lrr_sd_raw"]["median"], cohort["lrr_sd"]["median"],

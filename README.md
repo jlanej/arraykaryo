@@ -27,6 +27,7 @@ arraykaryo run --bcf cohort.bcf --out out --threads 8 --sample-sheet samples.tsv
 #   add --sex-mosaics to list an X or Y lost or gained in part of the cells on the digest (left out by default: cultured lines, ageing blood)
 arraykaryo inspect cohort.bcf                                   # samples, contigs and assembly, fields, the conventions seen; refuses an export without GT/LRR/BAF
 arraykaryo extract --bcf cohort.bcf --out out --threads 8       # one pass into out/cache: per-chromosome arrays of GT, LRR and BAF, a probe table, a manifest
+#   add --fasta ref.fa (indexed) when the export carries no INFO/GC: the probe GC is computed from the reference (gtc2vcf's window) for the GC-wave correction
 arraykaryo qc --out out --sample-sheet samples.tsv --threads 8  # probe QC, sample QC (pass or flagged with the reason), the GC-wave correction, the cohort reference
 arraykaryo sex --out out                                        # the sex-chromosome complement of every sample, mosaics included, against the reported sex
 arraykaryo pedigree --out out --pedigree trios.tsv              # kinship and IBS0 of every pair, the families they imply, the check against the given pedigree
